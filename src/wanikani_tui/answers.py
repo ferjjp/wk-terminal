@@ -25,23 +25,27 @@ class Result:
     exact: bool = True  # False when accepted with a typo
 
 
-_NN = re.compile(r"nn(?![aiueoy])")
+_NN = re.compile(r"nn|n'")
 
 
 def _pre(text: str) -> str:
-    """WaniKani's IME accepts 'nn' for ん; this port of wanakana does not, so fold it first."""
+    """Standard IME rule, as on WaniKani: 'nn' (or n') is always ん, so おんな is typed 'onnna' and
+    'tanni' gives たんい. This port of wanakana lacks IME mode, so fold it before converting."""
     return _NN.sub("ん", text)
 
 
+_TAIL = re.compile(r"[b-df-hj-np-tv-z']+$")  # an unfinished syllable: trailing consonants (incl. n, y)
+
+
 def to_kana_live(text: str) -> str:
-    """Convert romaji to kana as the user types, holding a trailing 'n' until it resolves."""
+    """Convert romaji to kana as the user types. The trailing consonant run is left alone until a
+    vowel completes it, so 'ny' stays 'ny' and becomes にゅ, instead of turning into ん+y."""
     if not text:
         return text
     text = _pre(text)
-    if text.endswith("n") and not text.endswith("nn"):
-        head = text[:-1]
-        return (wanakana.to_kana(head) if head else "") + "n"
-    return wanakana.to_kana(text)
+    m = _TAIL.search(text)
+    head, tail = (text[: m.start()], m.group(0)) if m else (text, "")
+    return (wanakana.to_kana(head) if head else "") + tail
 
 
 def to_kana_final(text: str) -> str:

@@ -38,6 +38,9 @@ def send(title: str, body: str, actions: list[tuple[str, str]] | None = None, ti
         for aid, label in actions or []:
             flat += [aid, label]
         hints = {"urgency": ("y", urgency)}
+        if icon.startswith("/"):
+            hints["image-path"] = ("s", icon)
+            icon = "file://" + icon
         msg = new_method_call(addr, "Notify", "susssasa{sv}i", (app, 0, icon, title, body, flat, hints, timeout_s * 1000))
         if actions:
             # subscribe before sending so we cannot miss a fast click

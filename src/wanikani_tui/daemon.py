@@ -50,12 +50,31 @@ def open_popup(cfg: Settings) -> subprocess.Popen | None:
         return None
 
 
-def notify(title: str, body: str, action: bool, timeout_s: int = 120) -> str:
+def notify(title: str, body: str, action: bool, timeout_s: int = 120, icon: str | None = None) -> str:
     """Desktop notification; with `action`, block until clicked/closed and return the action id."""
     from . import notify as dbus_notify
 
     actions = [("default", "Review now"), ("review", "Review now"), ("later", "Later")] if action else None
-    return dbus_notify.send(title, body, actions=actions, timeout_s=timeout_s)
+    return dbus_notify.send(title, body, actions=actions, timeout_s=timeout_s, icon=icon or "accessories-dictionary")
+
+
+def notification_icon(core: Core) -> str | None:
+    """A PNG of the item the popup would show, in its WaniKani colour, for the notification."""
+    try:
+        from .images import text_image
+
+        mode, items = core.popup_items()
+        if items:
+            s = items[0].subject
+            img = text_image(s.characters or s.primary_meaning, s.color, px=96 if s.characters else 28, pad=14)
+        else:
+            img = text_image("鰐", "#00aaff", px=96, pad=14)
+        path = state_dir() / "notification.png"
+        img.save(path)
+        return str(path)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("could not render notification icon: %s", exc)
+        return None
 
 
 def run(core: Core, once: bool = False) -> int:
@@ -86,16 +105,17 @@ def run(core: Core, once: bool = False) -> int:
                 title, body = f"{reviews} review{'s' if reviews != 1 else ''} waiting", "Open a quick review window?"
             else:
                 title, body = f"{lessons} lesson{'s' if lessons != 1 else ''} available", "Learn one new item?"
+            icon = notification_icon(core)
             if cfg.daemon_popup == "auto":
-                notify(title, "Opening a review window…", action=False, timeout_s=5)
+                notify(title, "Opening a review window…", action=False, timeout_s=5, icon=icon)
                 open_popup(cfg)
             elif cfg.daemon_popup == "notify":
-                choice = notify(title, body, action=True)
+                choice = notify(title, body, action=True, icon=icon)
                 log.info("notification answered: %r", choice or "(closed or expired)")
                 if choice in ("review", "default"):
                     open_popup(cfg)
             else:
-                notify(title, body, action=False)
+                notify(title, body, action=False, icon=icon)
         elif next_at and reviews == 0:
             log.debug("nothing due; next at %s", next_at.astimezone().strftime("%H:%M"))
         if once:

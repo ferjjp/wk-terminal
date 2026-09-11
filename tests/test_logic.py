@@ -61,3 +61,32 @@ def test_queue():
         seen += 1
     assert seen == 3  # kanji needs 2 parts, radical 1
     assert q.remaining == 0 and q.correct_count == 2
+
+
+def test_kana_live_incomplete_syllables():
+    seq = ""
+    for ch in "nyuu":
+        seq = to_kana_live(seq + ch)
+    assert seq == "にゅう"
+    seq = ""
+    for ch in "shinbun":
+        seq = to_kana_live(seq + ch)
+    assert seq == "しんぶn" and to_kana_final(seq) == "しんぶん"
+    seq = ""
+    for ch in "kannji":
+        seq = to_kana_live(seq + ch)
+    assert seq == "かんじ"
+    seq = ""
+    for ch in "gakkou":
+        seq = to_kana_live(seq + ch)
+    assert seq == "がっこう"
+    seq = ""
+    for ch in "onnna":
+        seq = to_kana_live(seq + ch)
+    assert seq == "おんな"
+    assert to_kana_final("tanni") == "たんい" and to_kana_final("tan'i") == "たんい"
+    assert to_kana_final("konnnichiha") == "こんにちは" and to_kana_final("kon'nichiha") == "こんにちは"
+    seq = ""
+    for ch in "ra-men":
+        seq = to_kana_live(seq + ch)
+    assert to_kana_final(seq) == "らーめん"
