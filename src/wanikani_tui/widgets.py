@@ -40,9 +40,31 @@ if IMAGE_MODE != "none":
         and _kitty_capable_outer_terminal()
     ):
         AutoImage = TGPImage  # type: ignore[misc]
-    ImageWidget = {
+    _Base = {
         "tgp": TGPImage, "kitty": TGPImage, "halfcell": HalfcellImage, "unicode": UnicodeImage, "sixel": SixelImage,
     }.get(IMAGE_MODE, AutoImage)
+
+    class ImageWidget(_Base, Renderable=_Base._Renderable):  # type: ignore[misc,valid-type]
+        """textual-image's widget deletes the terminal image and creates a fresh renderable on *every*
+        render() call, while the re-transmit only happens lazily when the compositor consumes it. Any
+        re-render (a keystroke in a neighbouring Input is enough) therefore wipes the picture until the
+        next full repaint. Keep one renderable per (image, size) instead and only replace it on change."""
+
+        def __init__(self, *args, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+            self._stable_key: tuple | None = None
+
+        def render(self):
+            if not self._image:
+                return ""
+            styled = self._get_styled_size()
+            key = (id(self._image), styled, self.content_size)
+            if self._renderable is None or key != self._stable_key:
+                if self._renderable is not None:
+                    self._renderable.cleanup()
+                self._renderable = self._Renderable(self._image, *styled)
+                self._stable_key = key
+            return self._renderable
 else:
     ImageWidget = None  # type: ignore[assignment]
 
