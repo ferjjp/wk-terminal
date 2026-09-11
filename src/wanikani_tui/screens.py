@@ -390,7 +390,7 @@ class SessionScreen(Screen[list[Item]]):
 
     DEFAULT_CSS = """
     SessionScreen #stage { align: center top; padding: 1 2; }
-    SessionScreen CharDisplay { margin: 0 0 1 0; }
+    SessionScreen CharDisplay { width: 100%; margin: 0 0 1 0; align-horizontal: center; content-align: center middle; }
     SessionScreen #prompt { width: 100%; height: 3; content-align: center middle; text-style: bold; }
     SessionScreen #prompt.meaning { background: #eeeeee; color: #222222; }
     SessionScreen #prompt.reading { background: #333333; color: #ffffff; }
