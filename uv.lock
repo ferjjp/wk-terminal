@@ -377,7 +377,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
-    { name = "jeepney" },
+    { name = "jeepney", marker = "sys_platform == 'linux'" },
     { name = "pillow" },
     { name = "resvg-py" },
     { name = "textual" },
@@ -393,7 +393,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "jeepney", specifier = ">=0.9.0" },
+    { name = "jeepney", marker = "sys_platform == 'linux'", specifier = ">=0.9.0" },
     { name = "pillow", specifier = ">=12.3.0" },
     { name = "resvg-py", specifier = ">=0.5.0" },
     { name = "textual", specifier = ">=8.2.8" },

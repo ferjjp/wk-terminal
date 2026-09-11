@@ -94,7 +94,12 @@ def main(argv: list[str] | None = None) -> int:
 
             if args.action == "install":
                 unit = daemon.install_service()
-                print(f"installed and started {daemon.UNIT_NAME} ({unit})\nlogs: journalctl --user -u {daemon.UNIT_NAME} -f")
+                from .platform import IS_MAC
+
+                if IS_MAC:
+                    print(f"installed launch agent {unit}\nlogs: {daemon.state_dir() / 'daemon.log'}")
+                else:
+                    print(f"installed and started {daemon.UNIT_NAME} ({unit})\nlogs: journalctl --user -u {daemon.UNIT_NAME} -f")
                 return 0
             if args.action == "uninstall":
                 daemon.uninstall_service()

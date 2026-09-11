@@ -9,6 +9,11 @@ import sys
 def run() -> int:
     print(f"TERM={os.environ.get('TERM')}  TERM_PROGRAM={os.environ.get('TERM_PROGRAM')}  inside tmux: {bool(os.environ.get('TMUX'))}")
     print(f"stdout is a tty: {sys.__stdout__.isatty()}")
+    from .platform import default_terminal_command, notification_backend, os_name
+    from .audio import player
+
+    print(f"os: {os_name()}   notifications: {notification_backend()}   audio player: {(player() or ['none'])[0]}")
+    print(f"popup terminal: {default_terminal_command()}")
 
     from textual_image import renderable
     from textual_image._terminal import get_cell_size

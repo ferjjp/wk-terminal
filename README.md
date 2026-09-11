@@ -91,6 +91,22 @@ journalctl --user -u wanikani-tui -f
 The popup command is configurable (`terminal = ...`), so any terminal that can run a
 command in a new window works.
 
+## macOS
+
+Everything works the same on macOS with ghostty, kitty or WezTerm (all three support the
+kitty graphics protocol). Differences, all detected automatically:
+
+- Notifications use `terminal-notifier` when installed (`brew install terminal-notifier`);
+  a click then opens the popup. Without it, plain `osascript` notifications are shown and
+  clicks do nothing.
+- The popup opens in ghostty, kitty or WezTerm if found, otherwise in Terminal.app
+  (no images there). `terminal = "..."` in the config overrides the choice.
+- `wk daemon install` writes a launchd agent in `~/Library/LaunchAgents/` instead of a
+  systemd unit; logs go to `~/.local/state/wanikani-tui/`.
+- Audio plays through `afplay`; the CJK font comes from the system Hiragino faces.
+
+`wk doctor` prints which backends were picked.
+
 ## tmux
 
 Images reach the real terminal only with passthrough enabled:

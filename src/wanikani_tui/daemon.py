@@ -12,8 +12,9 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from .config import Settings, config_dir, state_dir
+from .config import Settings, config_dir, settings, state_dir
 from .core import Core
+from .platform import IS_MAC, default_terminal_command, notification_backend
 
 log = logging.getLogger("wk.daemon")
 
@@ -40,8 +41,16 @@ def wk_executable() -> list[str]:
     return [sys.executable, "-m", "wanikani_tui.cli"]
 
 
+def popup_command(cfg: Settings) -> list[str]:
+    term = cfg.daemon_terminal or default_terminal_command()
+    if term == "osascript-terminal":  # macOS without a graphics-capable terminal: Terminal.app
+        inner = " ".join(shlex.quote(p) for p in wk_executable() + ["pop"])
+        return ["osascript", "-e", f'tell application "Terminal" to do script "{inner}"', "-e", 'tell application "Terminal" to activate']
+    return shlex.split(term) + wk_executable() + ["pop"]
+
+
 def open_popup(cfg: Settings) -> subprocess.Popen | None:
-    cmd = shlex.split(cfg.daemon_terminal) + wk_executable() + ["pop"]
+    cmd = popup_command(cfg)
     log.info("opening popup: %s", " ".join(cmd))
     try:
         return subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
@@ -55,7 +64,8 @@ def notify(title: str, body: str, action: bool, timeout_s: int = 120, icon: str 
     from . import notify as dbus_notify
 
     actions = [("default", "Review now"), ("review", "Review now"), ("later", "Later")] if action else None
-    return dbus_notify.send(title, body, actions=actions, timeout_s=timeout_s, icon=icon or "accessories-dictionary")
+    return dbus_notify.send(title, body, actions=actions, timeout_s=timeout_s, icon=icon or "accessories-dictionary",
+                            click_command=popup_command(settings()) if action else None)
 
 
 def notification_icon(core: Core) -> str | None:
@@ -84,7 +94,10 @@ def run(core: Core, once: bool = False) -> int:
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
         handlers=[logging.FileHandler(log_file), logging.StreamHandler(sys.stdout)],
     )
-    log.info("daemon started (sync every %d min, notify at most every %d min)", cfg.daemon_sync_minutes, cfg.daemon_interval_minutes)
+    log.info("daemon started on %s (notifications: %s; sync every %d min, notify at most every %d min)",
+             sys.platform, notification_backend(), cfg.daemon_sync_minutes, cfg.daemon_interval_minutes)
+    if notification_backend() == "mac-osascript":
+        log.warning("clicks on notifications need terminal-notifier (brew install terminal-notifier); using plain notifications")
     last_sync = datetime.min
     last_notify = datetime.min
     while True:
@@ -114,6 +127,7 @@ def run(core: Core, once: bool = False) -> int:
                 log.info("notification answered: %r", choice or "(closed or expired)")
                 if choice in ("review", "default"):
                     open_popup(cfg)
+                # 'launched': the macOS notifier runs the popup itself on click
             else:
                 notify(title, body, action=False, icon=icon)
         elif next_at and reviews == 0:
@@ -141,7 +155,40 @@ WantedBy=graphical-session.target
 """
 
 
+LAUNCHD_PLIST = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>{label}</string>
+    <key>ProgramArguments</key><array>{args}</array>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <key>EnvironmentVariables</key><dict><key>PATH</key><string>{path}</string></dict>
+    <key>StandardOutPath</key><string>{log}</string>
+    <key>StandardErrorPath</key><string>{log}</string>
+</dict>
+</plist>
+"""
+LAUNCHD_LABEL = "com.wanikani-tui.daemon"
+
+
+def _launchd_plist() -> Path:
+    return Path.home() / "Library" / "LaunchAgents" / f"{LAUNCHD_LABEL}.plist"
+
+
 def install_service() -> Path:
+    if IS_MAC:
+        plist = _launchd_plist()
+        plist.parent.mkdir(parents=True, exist_ok=True)
+        args = "".join(f"<string>{a}</string>" for a in wk_executable() + ["daemon"])
+        plist.write_text(LAUNCHD_PLIST.format(
+            label=LAUNCHD_LABEL, args=args, path=os.environ.get("PATH", "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"),
+            log=state_dir() / "launchd.log",
+        ))
+        subprocess.run(["launchctl", "unload", str(plist)], capture_output=True)
+        subprocess.run(["launchctl", "load", "-w", str(plist)], check=False)
+        return plist
     unit_dir = Path(os.environ.get("XDG_CONFIG_HOME", "~/.config")).expanduser() / "systemd" / "user"
     unit_dir.mkdir(parents=True, exist_ok=True)
     unit = unit_dir / UNIT_NAME
@@ -153,6 +200,12 @@ def install_service() -> Path:
 
 
 def uninstall_service() -> None:
+    if IS_MAC:
+        plist = _launchd_plist()
+        subprocess.run(["launchctl", "unload", "-w", str(plist)], capture_output=True)
+        if plist.exists():
+            plist.unlink()
+        return
     subprocess.run(["systemctl", "--user", "disable", "--now", UNIT_NAME], check=False)
     unit = Path(os.environ.get("XDG_CONFIG_HOME", "~/.config")).expanduser() / "systemd" / "user" / UNIT_NAME
     if unit.exists():
@@ -161,5 +214,8 @@ def uninstall_service() -> None:
 
 
 def service_status() -> str:
+    if IS_MAC:
+        out = subprocess.run(["launchctl", "list", LAUNCHD_LABEL], capture_output=True, text=True)
+        return out.stdout or out.stderr or "not loaded"
     out = subprocess.run(["systemctl", "--user", "--no-pager", "status", UNIT_NAME], capture_output=True, text=True)
     return out.stdout or out.stderr

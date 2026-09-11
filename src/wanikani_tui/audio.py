@@ -10,15 +10,11 @@ from typing import Any, Callable
 
 from .config import audio_cache_dir
 
-PLAYERS = [
-    ("mpv", ["mpv", "--no-video", "--really-quiet"]),
-    ("ffplay", ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet"]),
-    ("paplay", ["paplay"]),
-]
+from .platform import audio_players
 
 
 def player() -> list[str] | None:
-    for name, cmd in PLAYERS:
+    for name, cmd in audio_players():
         if shutil.which(name):
             return cmd
     return None

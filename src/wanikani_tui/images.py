@@ -13,13 +13,9 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .config import image_cache_dir
 
-FONT_CANDIDATES = [
-    "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
-    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-    "/usr/share/fonts/noto-cjk/NotoSansCJK-Bold.ttc",
-    "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
-    "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
-]
+from .platform import font_candidates
+
+FONT_CANDIDATES = font_candidates()
 
 
 @lru_cache(maxsize=1)
@@ -30,14 +26,17 @@ def font_path() -> str | None:
     for p in FONT_CANDIDATES:
         if Path(p).exists():
             return p
-    try:
-        out = subprocess.run(
-            ["fc-match", "-f", "%{file}", "Noto Sans CJK JP:lang=ja"], capture_output=True, text=True, timeout=5
-        ).stdout.strip()
-        if out and Path(out).exists():
-            return out
-    except Exception:
-        pass
+    import shutil
+
+    if shutil.which("fc-match"):
+        try:
+            out = subprocess.run(
+                ["fc-match", "-f", "%{file}", ":lang=ja"], capture_output=True, text=True, timeout=5
+            ).stdout.strip()
+            if out and Path(out).exists():
+                return out
+        except Exception:
+            pass
     return None
 
 

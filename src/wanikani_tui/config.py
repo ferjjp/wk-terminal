@@ -106,7 +106,7 @@ quiet_hours = ["23:00", "08:00"]
 popup = "notify"             # notify (notification with a button) | auto (open the window directly) | none
 popup_items = 1              # reviews per popup window
 prefer = "reviews"           # reviews | lessons | mixed  (what a popup shows when both are available)
-terminal = "ghostty --title=WaniKani --class=wanikani-popup --window-width=72 --window-height=24 -e"
+# terminal = "ghostty --title=WaniKani -e"   # default: detected (ghostty, kitty, wezterm, …; Terminal.app on macOS)
 notify_lessons = false       # also notify when lessons are waiting and nothing is due
 
 [keys]
@@ -135,7 +135,7 @@ class Settings:
     daemon_popup: str = "notify"
     daemon_popup_items: int = 1
     daemon_prefer: str = "reviews"
-    daemon_terminal: str = "ghostty --title=WaniKani --class=wanikani-popup --window-width=72 --window-height=24 -e"
+    daemon_terminal: str = ""  # empty = detect at runtime (see platform.default_terminal_command)
     daemon_notify_lessons: bool = False
     keys: dict[str, str] = field(default_factory=dict)
 
@@ -176,7 +176,7 @@ def settings() -> Settings:
     s.daemon_popup = str(_get(raw, "daemon", "popup", "notify"))
     s.daemon_popup_items = int(_get(raw, "daemon", "popup_items", 1))
     s.daemon_prefer = str(_get(raw, "daemon", "prefer", "reviews"))
-    s.daemon_terminal = str(_get(raw, "daemon", "terminal", s.daemon_terminal))
+    s.daemon_terminal = str(_get(raw, "daemon", "terminal", "") or "")
     s.daemon_notify_lessons = bool(_get(raw, "daemon", "notify_lessons", False))
     s.keys = {str(k): str(v) for k, v in (raw.get("keys") or {}).items()}
     return s
