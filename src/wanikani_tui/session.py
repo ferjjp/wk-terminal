@@ -45,7 +45,8 @@ class Item:
 class Queue:
     """Hands out (item, part) prompts WaniKani-style: a small active pool, random order."""
 
-    def __init__(self, items: list[Item], active_size: int = 10, seed: int | None = None) -> None:
+    def __init__(self, items: list[Item], active_size: int = 10, seed: int | None = None, back_to_back: bool = False) -> None:
+        self.back_to_back = back_to_back
         self.rng = random.Random(seed)
         self.pending = list(items)
         self.rng.shuffle(self.pending)
@@ -76,6 +77,11 @@ class Queue:
             self.active.append(self.pending.pop())
         if not self.active:
             return None
+        if self.back_to_back and self.last and self.last[0] in self.active and self.last[0].need:
+            item = self.last[0]
+            part = sorted(item.need, key=lambda p: p.value)[0]
+            self.last = (item, part)
+            return item, part
         candidates = list(self.active)
         # avoid asking the same item twice in a row when there is a choice
         if self.last and len(candidates) > 1:
@@ -84,6 +90,17 @@ class Queue:
         part = self.rng.choice(sorted(item.need, key=lambda p: p.value))
         self.last = (item, part)
         return item, part
+
+    def unmark(self, item: Item, part: Part, was_correct: bool) -> None:
+        """Reverse the last mark() so the same prompt can be answered again."""
+        if was_correct:
+            if item in self.finished:
+                self.finished.remove(item)
+                self.active.append(item)
+            item.need.add(part)
+        else:
+            item.wrong[part] = max(0, item.wrong[part] - 1)
+        self.last = (item, part)
 
     def mark(self, item: Item, part: Part, correct: bool) -> bool:
         """Record an answer. Returns True when the item just became complete."""

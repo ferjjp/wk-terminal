@@ -1,13 +1,16 @@
 # wanikani-tui
 
 WaniKani in your terminal: dashboard, item browser, reviews and lessons, with kanji and
-radical images drawn through the kitty graphics protocol (ghostty, kitty, WezTerm…).
+radical images drawn through the kitty graphics protocol (ghostty, kitty, WezTerm…),
+plus a background daemon that nudges you with desktop notifications and opens a small
+review window.
 
 ## Setup
 
 1. Create a personal access token at
-   <https://www.wanikani.com/settings/personal_access_tokens> with the
-   `assignments:start` and `reviews:create` permissions enabled.
+   <https://www.wanikani.com/settings/personal_access_tokens> with
+   `assignments:start`, `reviews:create`, `study_materials:create` and
+   `study_materials:update` enabled.
 2. Store it where the app can find it (never paste it into chat logs):
 
    ```sh
@@ -23,28 +26,67 @@ radical images drawn through the kitty graphics protocol (ghostty, kitty, WezTer
    uv tool install --editable .
    ```
 
-   or run it from the checkout with `uv run wk`.
-
 The first start downloads every subject (~10 requests) into
 `~/.local/share/wanikani-tui/cache.sqlite3`. Later starts sync incrementally in the
 background.
 
-## Usage
+## Commands
 
 ```
-wk                 # open the TUI (syncs in the background)
-wk --no-sync       # offline browsing of the cache
-wk --full-sync     # re-download everything
-wk sync            # sync only, print counts (handy in cron)
-wk --images tgp    # force kitty graphics if auto-detection fails (e.g. inside tmux)
-wk --images none   # plain text, no images
+wk                    # the full interface (syncs in the background)
+wk --no-sync          # offline: browse the cache, reviews are queued until you are back online
+wk --full-sync        # re-download everything
+wk sync               # sync only, print counts; also sends queued submissions
+wk due                # "12 reviews, 3 lessons"      (--format tmux|short|json, --sync)
+wk pop                # one review (or one lesson) in a small window, then exit
+wk daemon             # background sync + desktop notifications (foreground)
+wk daemon install     # run it as a systemd user service, started with your session
+wk daemon status | uninstall
+wk config             # write ~/.config/wanikani/config.toml with all defaults
+wk doctor             # what image protocol the terminal negotiates
+wk --images tgp       # force kitty graphics (auto | tgp | sixel | halfcell | unicode | none)
 ```
 
-Keys on the dashboard: `r` reviews, `l` lessons, `b` browse, `s` sync, `q` quit.
-Browse: `/` search, `t` cycle type filter, `Enter` open item. Item view: `g` jump to a
-related item, `o` open on wanikani.com. Reviews: type the answer and press `Enter`;
-readings convert romaji to kana as you type (`nn` gives ん). `Esc` wraps up the
-current batch, `Esc` again quits. `F1` shows the item after you answered.
+## Keys
+
+Dashboard: `r` reviews, `l` lessons, `L` pick lessons, `b` browse, `e` leeches, `t` stats,
+`s` sync, `q` quit.
+Browse: `/` search, `t` type filter, `f` cycle filter (all, due in 24 h, leeches, SRS group),
+`Enter` open.
+Item: `a` audio, `s` stroke order (kanji), `y` add synonym, `n` note, `g` related, `o` open
+on wanikani.com, `Tab` moves between related-item chips, `Enter` opens one.
+Reviews: type and press `Enter`; readings convert romaji to kana as you type (`nn` gives
+ん). `Ctrl+Z` undoes the last answer until you continue. `F1` shows the item after you
+answered. `Esc` wraps up the current batch, `Esc` again quits. Failed submissions are
+queued and sent on the next sync.
+Lessons: `←`/`→` (or `h`/`l`) navigate, `Enter` on the last page starts the quiz.
+
+All keys can be changed under `[keys]` in the config file.
+
+## Config
+
+`wk config` writes `~/.config/wanikani/config.toml` with every option and its default:
+lightning mode, review order (`random`, `level`, `back_to_back`), mnemonic on a miss,
+audio autoplay, lesson batch size, image height, theme (any Textual theme, e.g.
+`textual-light`, `tokyo-night`), colour-blind SRS palette, vim keys, compact layout,
+and the daemon's cadence, quiet hours, popup behaviour and terminal command.
+
+## Daemon
+
+`wk daemon` refreshes assignments every 10 minutes and, when reviews are due, sends a
+desktop notification with a **Review now** button (at most every 30 minutes, not during
+quiet hours). Clicking it opens `wk pop` in a small ghostty window with the oldest due
+review. With `popup = "auto"` the window opens without asking; with `popup = "none"` you
+only get the notification. `notify_lessons = true` also nudges when lessons are waiting.
+
+```sh
+wk daemon --once        # try one cycle in the foreground
+wk daemon install       # ~/.config/systemd/user/wanikani-tui.service, enabled and started
+journalctl --user -u wanikani-tui -f
+```
+
+The popup command is configurable (`terminal = ...`), so any terminal that can run a
+command in a new window works.
 
 ## tmux
 
@@ -54,13 +96,23 @@ Images reach the real terminal only with passthrough enabled:
 set -g allow-passthrough on
 ```
 
-Inside tmux the terminal's capability answer never reaches the app, so `wk` assumes kitty
-graphics when it can tell it is running under ghostty, kitty or WezTerm. Elsewhere, or if
-images come out as coloured blocks, start with `wk --images tgp`.
+Inside tmux the terminal's capability answers come from tmux itself, so `wk` assumes
+kitty graphics when it can tell it is running under ghostty, kitty or WezTerm.
+Elsewhere, or if images come out wrong, start with `wk --images tgp`.
+
+For a due counter in the tmux status line:
+
+```
+set -g status-right '#(wk due --format tmux) %H:%M'
+```
 
 ## Development
 
 ```sh
-uv run pytest            # answer checking, SRS math, queue logic
-uv run python tests/drive.py out/   # drive every screen headlessly, saves PNG screenshots
+uv run pytest                        # answer checking, SRS math, queue, core/retry queue, real-cache shapes
+uv run python tests/drive.py out/    # drive the main screens headlessly, saves PNG screenshots
+uv run python tests/drive2.py out/   # stats, picker, filters, synonyms, strokes, undo, popup
+uv run python tests/pty_capture.py "r,a,enter" out.bin   # kitty-graphics traffic vs painted cells
 ```
+
+Stroke order data comes from [KanjiVG](http://kanjivg.tagaini.net) (CC BY-SA 3.0).

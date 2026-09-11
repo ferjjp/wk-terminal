@@ -24,7 +24,8 @@ from wanikani_tui.answers import Result, Verdict
 scr.check_meaning = lambda a, s: Result(Verdict.CORRECT)
 scr.check_reading = lambda a, s: Result(Verdict.CORRECT)
 from wanikani_tui.app import WKApp
-WKApp(FakeAPI(), build_db(":memory:"), skip_sync=True).run()
+from wanikani_tui.core import Core
+WKApp(Core(FakeAPI(), build_db(":memory:")), skip_sync=True).run()
 '''
 
 pid, fd = pty.fork()

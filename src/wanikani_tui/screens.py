@@ -1,4 +1,4 @@
-"""Screens: subject detail, browse, review/lesson sessions, summary, confirm."""
+"""Screens: subject detail, browse, review/lesson sessions, lesson picker, summary, modals."""
 
 from __future__ import annotations
 
@@ -6,22 +6,22 @@ import webbrowser
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from rich.markup import escape
 from rich.text import Text
 from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.containers import Horizontal, ItemGrid, Vertical, VerticalScroll
 from textual.screen import ModalScreen, Screen
 from textual.widgets import DataTable, Footer, Header, Input, OptionList, Static
 from textual.widgets.option_list import Option
 
 from .answers import Verdict, check_meaning, check_reading, to_kana_live
-from .api import ApiError
-from .db import TYPE_ORDER, parse_ts
-from .models import SRS_NAMES, Assignment, Subject, next_srs_stage, srs_color
+from .config import settings
+from .db import parse_ts
+from .keys import key
+from .models import SRS_NAMES, Subject, next_srs_stage, srs_color
 from .session import Item, Part, Queue
-from .widgets import CharDisplay, mnemonic_text, type_badge
+from .widgets import CharDisplay, Chip, ImageWidget, mnemonic_text, type_badge
 
 if TYPE_CHECKING:
     from .app import WKApp
@@ -30,8 +30,7 @@ if TYPE_CHECKING:
 def _rel_time(ts: datetime | None) -> str:
     if ts is None:
         return "—"
-    delta = ts - datetime.now(timezone.utc)
-    secs = delta.total_seconds()
+    secs = (ts - datetime.now(timezone.utc)).total_seconds()
     if secs <= 0:
         return "now"
     if secs < 3600:
@@ -48,13 +47,8 @@ def chip(subject: Subject) -> Text:
     return t
 
 
-def chips_line(subjects: list[Subject]) -> Text:
-    out = Text()
-    for i, s in enumerate(subjects):
-        if i:
-            out.append("   ")
-        out.append_text(chip(s))
-    return out
+def _vim() -> bool:
+    return settings().ui_vim_keys
 
 
 # --------------------------------------------------------------------------- subject detail
@@ -70,12 +64,37 @@ class Section(Static):
         self.border_title = title
 
 
+class ChipSection(Vertical):
+    DEFAULT_CSS = """
+    ChipSection { border: round $secondary; padding: 0 1; margin: 0 0 1 0; height: auto; }
+    ChipSection ItemGrid { height: auto; }
+    """
+
+    def __init__(self, title: str, subjects: list[Subject], extra: str = "", **kw: Any) -> None:
+        super().__init__(**kw)
+        self.border_title = title
+        self.subjects = subjects
+        self.extra = extra
+
+    def compose(self) -> ComposeResult:
+        app: WKApp = self.app  # type: ignore[assignment]
+        with ItemGrid(min_column_width=24):
+            for s in self.subjects:
+                yield Chip(s, fetch=app.core.fetch_bytes)
+        if self.extra:
+            yield Static(Text(self.extra, style="dim"))
+
+
 class SubjectDetail(VerticalScroll):
     DEFAULT_CSS = """
     SubjectDetail { padding: 0 1; }
     SubjectDetail #head { height: auto; margin-bottom: 1; }
     SubjectDetail #meta { padding: 0 2; height: auto; width: 1fr; }
     """
+    BINDINGS = [
+        Binding("j", "scroll_down", "Down", show=False),
+        Binding("k", "scroll_up", "Up", show=False),
+    ] if _vim() else []
 
     def __init__(self, subject: Subject, **kw: Any) -> None:
         super().__init__(**kw)
@@ -88,8 +107,9 @@ class SubjectDetail(VerticalScroll):
     def compose(self) -> ComposeResult:
         s = self.subject
         app = self.wk
-        assignment = app.assignment_for(s.id)
-        stats = app.db.review_statistic(s.id)
+        core = app.core
+        assignment = core.assignment_for(s.id)
+        stats = core.db.review_statistic(s.id)
 
         meta = Text()
         meta.append_text(type_badge(s))
@@ -100,14 +120,16 @@ class SubjectDetail(VerticalScroll):
             meta.append(", " + ", ".join(alts), style="dim")
         if s.user_synonyms:
             meta.append("\nYour synonyms: " + ", ".join(s.user_synonyms), style="italic #77ffdd")
+        if s.user_note:
+            meta.append("\nYour note: " + s.user_note, style="italic #ffd77a")
         meta.append("\n")
         if s.is_kanji:
-            on = s.readings_of_type("onyomi")
+            on_ = s.readings_of_type("onyomi")
             kun = s.readings_of_type("kunyomi")
             nan = s.readings_of_type("nanori")
             prim = s.primary_reading_type
             meta.append("\nOn'yomi: ", style="bold" if prim == "onyomi" else "dim")
-            meta.append(", ".join(on) or "—", style="bold" if prim == "onyomi" else "dim")
+            meta.append(", ".join(on_) or "—", style="bold" if prim == "onyomi" else "dim")
             meta.append("   Kun'yomi: ", style="bold" if prim == "kunyomi" else "dim")
             meta.append(", ".join(kun) or "—", style="bold" if prim == "kunyomi" else "dim")
             if nan:
@@ -138,9 +160,16 @@ class SubjectDetail(VerticalScroll):
                 parts.append(f"reading {100 * rc // (rc + ri)}%")
             if parts:
                 meta.append("   accuracy: " + ", ".join(parts), style="dim")
+        hints = []
+        if s.audio_urls:
+            hints.append(f"[{key('audio')}] audio")
+        if s.is_kanji:
+            hints.append(f"[{key('strokes')}] stroke order")
+        hints += [f"[{key('synonym')}] add synonym", f"[{key('note')}] note", f"[{key('related')}] related", f"[{key('open')}] browser"]
+        meta.append("\n" + "  ".join(hints), style="dim")
 
         with Horizontal(id="head"):
-            yield CharDisplay(s, fetch=app.fetch_bytes, rows=7)
+            yield CharDisplay(s, fetch=core.fetch_bytes, rows=app.image_rows())
             yield Static(meta, id="meta")
 
         if s.meaning_mnemonic:
@@ -156,21 +185,17 @@ class SubjectDetail(VerticalScroll):
                 body.append_text(Text.assemble(("Hint: ", "bold"), mnemonic_text(s.reading_hint)))
             yield Section("Reading mnemonic", body)
 
-        comps = app.subjects(s.component_ids)
+        comps = core.subjects(s.component_ids)
         if comps:
-            title = "Radicals" if s.is_kanji else "Kanji"
-            yield Section(f"{title} in this {s.label.lower()}", chips_line(comps))
-        similar = app.subjects(s.similar_ids)
+            yield ChipSection(("Radicals" if s.is_kanji else "Kanji") + f" in this {s.label.lower()}", comps)
+        similar = core.subjects(s.similar_ids)
         if similar:
-            yield Section("Visually similar", chips_line(similar))
-        amal = app.subjects(s.amalgamation_ids[:40])
+            yield ChipSection("Visually similar", similar)
+        amal = core.subjects(s.amalgamation_ids[:40])
         if amal:
             title = "Kanji using this radical" if s.is_radical else "Vocabulary using this kanji"
             extra = len(s.amalgamation_ids) - len(amal)
-            body = chips_line(amal)
-            if extra > 0:
-                body.append(f"   … and {extra} more", style="dim")
-            yield Section(title, body)
+            yield ChipSection(title, amal, f"… and {extra} more" if extra > 0 else "")
         if s.context_sentences:
             body = Text()
             for i, cs in enumerate(s.context_sentences):
@@ -182,7 +207,7 @@ class SubjectDetail(VerticalScroll):
 
     def related(self) -> list[Subject]:
         s = self.subject
-        return self.wk.subjects(s.component_ids + s.similar_ids + s.amalgamation_ids)
+        return self.wk.core.subjects(s.component_ids + s.similar_ids + s.amalgamation_ids)
 
 
 class RelatedPicker(ModalScreen[int | None]):
@@ -209,11 +234,83 @@ class RelatedPicker(ModalScreen[int | None]):
         self.dismiss(None)
 
 
+class TextPrompt(ModalScreen[str | None]):
+    DEFAULT_CSS = """
+    TextPrompt { align: center middle; }
+    TextPrompt > Vertical { width: 70; height: auto; border: thick $primary; background: $surface; padding: 1 2; }
+    """
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, title: str, value: str = "", placeholder: str = "") -> None:
+        super().__init__()
+        self.title_text = title
+        self.value = value
+        self.placeholder = placeholder
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Static(Text(self.title_text, style="bold"))
+            yield Input(value=self.value, placeholder=self.placeholder)
+            yield Static(Text("Enter to save · Esc to cancel", style="dim"))
+
+    def on_mount(self) -> None:
+        self.query_one(Input).focus()
+
+    @on(Input.Submitted)
+    def _done(self, event: Input.Submitted) -> None:
+        self.dismiss(event.value)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class StrokeScreen(ModalScreen[None]):
+    DEFAULT_CSS = """
+    StrokeScreen { align: center middle; }
+    StrokeScreen > Vertical { width: auto; height: auto; border: thick $primary; background: $surface; padding: 1 2; align: center middle; }
+    StrokeScreen .wk-image { width: auto; height: 16; }
+    """
+    BINDINGS = [Binding("escape", "close", "Close"), Binding("s", "close", "Close", show=False)]
+
+    def __init__(self, subject: Subject) -> None:
+        super().__init__()
+        self.subject = subject
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Static(Text(f"Stroke order · {self.subject.characters}", style="bold"))
+            if ImageWidget is not None:
+                yield ImageWidget(None, classes="wk-image", id="strokes")
+            yield Static(Text("loading from KanjiVG…", style="dim"), id="note")
+
+    def on_mount(self) -> None:
+        self._load()
+
+    @work(thread=True)
+    def _load(self) -> None:
+        from .images import stroke_image
+
+        app: WKApp = self.app  # type: ignore[assignment]
+        img = stroke_image(self.subject.characters or "", app.core.fetch_bytes)
+        if img is None or ImageWidget is None:
+            self.app.call_from_thread(self.query_one("#note", Static).update, Text("No stroke data available", style="red"))
+            return
+        self.app.call_from_thread(setattr, self.query_one("#strokes"), "image", img)
+        self.app.call_from_thread(self.query_one("#note", Static).update, Text("Strokes numbered in drawing order · data: KanjiVG (CC BY-SA)", style="dim"))
+
+    def action_close(self) -> None:
+        self.dismiss()
+
+
 class SubjectScreen(Screen[None]):
     BINDINGS = [
-        Binding("escape", "back", "Back"),
-        Binding("g", "related", "Go to related"),
-        Binding("o", "open", "Open on wanikani.com"),
+        Binding(key("back"), "back", "Back"),
+        Binding(key("related"), "related", "Related"),
+        Binding(key("audio"), "audio", "Audio"),
+        Binding(key("strokes"), "strokes", "Strokes"),
+        Binding(key("synonym"), "synonym", "Synonym"),
+        Binding(key("note"), "note", "Note"),
+        Binding(key("open"), "open", "Browser"),
     ]
 
     def __init__(self, subject: Subject) -> None:
@@ -229,12 +326,58 @@ class SubjectScreen(Screen[None]):
         self.title = f"{self.subject.display_chars} · {self.subject.primary_meaning}"
         self.sub_title = f"{self.subject.label} · level {self.subject.level}"
 
+    @property
+    def wk(self) -> "WKApp":
+        return self.app  # type: ignore[return-value]
+
+    def rebuild(self) -> None:
+        old = self.query_one(SubjectDetail)
+        self.subject = self.wk.core.subject(self.subject.id)
+        old.remove()
+        self.mount(SubjectDetail(self.subject), before=self.query_one(Footer))
+
     def action_back(self) -> None:
         self.dismiss()
 
     def action_open(self) -> None:
         if self.subject.document_url:
             webbrowser.open(self.subject.document_url)
+
+    def action_audio(self) -> None:
+        self.wk.play_audio(self.subject)
+
+    def action_strokes(self) -> None:
+        if self.subject.is_kanji and self.subject.characters:
+            self.app.push_screen(StrokeScreen(self.subject))
+        else:
+            self.notify("Stroke order is available for kanji")
+
+    def action_synonym(self) -> None:
+        def save(text: str | None) -> None:
+            if text and text.strip():
+                self._save_material("synonym", text.strip())
+
+        self.app.push_screen(TextPrompt(f"Add a meaning synonym for {self.subject.display_chars}", placeholder="e.g. h2o"), save)
+
+    def action_note(self) -> None:
+        def save(text: str | None) -> None:
+            if text is not None:
+                self._save_material("note", text.strip())
+
+        self.app.push_screen(TextPrompt(f"Your note for {self.subject.display_chars}", value=self.subject.user_note or ""), save)
+
+    @work(thread=True)
+    def _save_material(self, kind: str, text: str) -> None:
+        try:
+            if kind == "synonym":
+                self.wk.core.add_synonym(self.subject, text)
+            else:
+                self.wk.core.set_note(self.subject, text)
+        except Exception as exc:  # noqa: BLE001
+            self.app.call_from_thread(self.notify, f"Could not save: {exc}", severity="error")
+            return
+        self.app.call_from_thread(self.rebuild)
+        self.app.call_from_thread(self.notify, "Saved to WaniKani")
 
     def action_related(self) -> None:
         rel = self.query_one(SubjectDetail).related()
@@ -244,7 +387,7 @@ class SubjectScreen(Screen[None]):
 
         def go(sid: int | None) -> None:
             if sid:
-                self.app.push_screen(SubjectScreen(self.app.subject(sid)))  # type: ignore[attr-defined]
+                self.app.push_screen(SubjectScreen(self.wk.core.subject(sid)))
 
         self.app.push_screen(RelatedPicker(rel), go)
 
@@ -260,17 +403,20 @@ class BrowseScreen(Screen[None]):
     BrowseScreen #search.shown { display: block; }
     """
     BINDINGS = [
-        Binding("escape", "back", "Back"),
-        Binding("slash", "search", "Search"),
-        Binding("t", "cycle_type", "Type filter"),
+        Binding(key("back"), "back", "Back"),
+        Binding(key("search"), "search", "Search"),
+        Binding(key("type_filter"), "cycle_type", "Type"),
+        Binding(key("filter"), "cycle_filter", "Filter"),
     ]
     TYPE_FILTERS = [None, ("radical",), ("kanji",), ("vocabulary", "kana_vocabulary")]
+    FILTERS = ["all", "due", "leech", "apprentice", "guru", "master", "enlightened", "burned"]
 
-    def __init__(self, level: int, max_level: int = 60) -> None:
+    def __init__(self, level: int, max_level: int = 60, flt: str = "all") -> None:
         super().__init__()
         self.level = level
         self.max_level = max_level
         self.type_idx = 0
+        self.filter_idx = self.FILTERS.index(flt) if flt in self.FILTERS else 0
         self.rows: dict[str, Subject] = {}
 
     @property
@@ -282,8 +428,7 @@ class BrowseScreen(Screen[None]):
         yield Input(placeholder="Search characters, meaning or slug… (Enter to search, Esc to close)", id="search")
         with Horizontal():
             yield OptionList(*[Option(f"Level {n}", id=f"L{n}") for n in range(1, self.max_level + 1)], id="levels")
-            table: DataTable = DataTable(id="table", cursor_type="row", zebra_stripes=True)
-            yield table
+            yield DataTable(id="table", cursor_type="row", zebra_stripes=True)
         yield Footer()
 
     def on_mount(self) -> None:
@@ -292,30 +437,43 @@ class BrowseScreen(Screen[None]):
         table.add_columns("Type", "Item", "Meaning", "Reading", "SRS", "Next review")
         levels = self.query_one("#levels", OptionList)
         levels.highlighted = self.level - 1
-        self.load_level(self.level)
+        self.reload()
         table.focus()
 
     @on(OptionList.OptionHighlighted, "#levels")
     def _level_changed(self, event: OptionList.OptionHighlighted) -> None:
         if event.option.id:
-            self.load_level(int(event.option.id[1:]))
+            self.level = int(event.option.id[1:])
+            if self.FILTERS[self.filter_idx] == "all":
+                self.reload()
 
     def action_cycle_type(self) -> None:
         self.type_idx = (self.type_idx + 1) % len(self.TYPE_FILTERS)
-        self.load_level(self.level)
+        self.reload()
 
-    def load_level(self, level: int) -> None:
-        self.level = level
+    def action_cycle_filter(self) -> None:
+        self.filter_idx = (self.filter_idx + 1) % len(self.FILTERS)
+        self.reload()
+
+    def reload(self) -> None:
         types = self.TYPE_FILTERS[self.type_idx]
-        subs = self.wk.subjects_at_level(level, types)
-        self.sub_title = f"Level {level}" + (f" · {types[0]}" if types else "") + f" · {len(subs)} items"
+        flt = self.FILTERS[self.filter_idx]
+        if flt == "all":
+            subs = self.wk.core.subjects_at_level(self.level, types)
+            where = f"Level {self.level}"
+        else:
+            subs = self.wk.core.subjects_filtered(flt)
+            if types:
+                subs = [s for s in subs if s.type in types]
+            where = {"due": "Due in 24 h", "leech": "Leeches"}.get(flt, flt.title())
+        self.sub_title = where + (f" · {types[0]}" if types else "") + f" · {len(subs)} items"
         self.fill(subs)
 
     def fill(self, subs: list[Subject]) -> None:
         table = self.query_one("#table", DataTable)
         table.clear()
         self.rows = {}
-        asg = self.wk.db.assignments_for(s.id for s in subs)
+        asg = self.wk.core.db.assignments_for(s.id for s in subs)
         for s in subs:
             a = asg.get(s.id)
             if a:
@@ -326,15 +484,14 @@ class BrowseScreen(Screen[None]):
                 srs = Text("Locked", style="dim")
                 nxt = ""
             reading = ", ".join(s.primary_readings) if s.has_reading else ""
-            key = str(s.id)
-            table.add_row(type_badge(s), Text(s.display_chars, style="bold"), s.primary_meaning, reading, srs, nxt, key=key)
-            self.rows[key] = s
+            table.add_row(type_badge(s), Text(s.display_chars, style="bold"), s.primary_meaning, reading, srs, nxt, key=str(s.id))
+            self.rows[str(s.id)] = s
 
     @on(DataTable.RowSelected)
     def _row(self, event: DataTable.RowSelected) -> None:
-        key = event.row_key.value
-        if key and key in self.rows:
-            self.app.push_screen(SubjectScreen(self.rows[key]))
+        k = event.row_key.value
+        if k and k in self.rows:
+            self.app.push_screen(SubjectScreen(self.rows[k]))
 
     def action_search(self) -> None:
         box = self.query_one("#search", Input)
@@ -345,12 +502,12 @@ class BrowseScreen(Screen[None]):
     def _search(self, event: Input.Submitted) -> None:
         text = event.value.strip()
         if text:
-            subs = self.wk.search_subjects(text)
+            subs = self.wk.core.search_subjects(text)
             self.sub_title = f"Search “{text}” · {len(subs)} results"
             self.fill(subs)
         self.query_one("#table", DataTable).focus()
 
-    def on_key(self, event) -> None:  # close search box with Esc while it is focused
+    def on_key(self, event) -> None:
         box = self.query_one("#search", Input)
         if event.key == "escape" and box.has_focus:
             box.remove_class("shown")
@@ -399,19 +556,32 @@ class SessionScreen(Screen[list[Item]]):
     SessionScreen #answer.incorrect { background: #8a1c1c 40%; border: tall #e04040; }
     SessionScreen #feedback { width: 100%; height: auto; min-height: 3; padding: 1 2; content-align: center top; }
     SessionScreen #status { dock: bottom; height: 1; padding: 0 2; background: $panel; }
+    SessionScreen.compact #stage { padding: 0 1; }
+    SessionScreen.compact CharDisplay { margin: 0; }
+    SessionScreen.compact #prompt { height: 1; }
+    SessionScreen.compact #feedback { min-height: 1; padding: 0 1; }
     """
     BINDINGS = [
-        Binding("escape", "leave", "Wrap up / quit"),
-        Binding("f1", "info", "Item info"),
-        Binding("ctrl+i", "info", "Item info", show=False),
+        Binding(key("leave"), "leave", "Wrap up / quit"),
+        Binding(key("info"), "info", "Info"),
+        Binding(key("undo"), "undo", "Undo"),
+        Binding(key("audio").replace("a", "ctrl+a") if key("audio") == "a" else key("audio"), "audio", "Audio", show=False),
     ]
 
-    def __init__(self, mode: str, items: list[Item]) -> None:
+    def __init__(self, mode: str, items: list[Item], popup: bool = False) -> None:
         super().__init__()
         self.mode = mode
-        self.queue = Queue(items, active_size=10 if mode == "review" else max(1, len(items)))
+        self.popup = popup
+        cfg = settings()
+        self.cfg = cfg
+        self.queue = Queue(
+            items, active_size=10 if mode == "review" else max(1, len(items)),
+            back_to_back=(cfg.review_order == "back_to_back"),
+        )
         self.current: tuple[Item, Part] | None = None
         self.awaiting = False
+        self.last_answer: tuple[Item, Part, bool] | None = None
+        self.pending_submit: Item | None = None
         self.failed: list[str] = []
 
     @property
@@ -421,7 +591,7 @@ class SessionScreen(Screen[list[Item]]):
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical(id="stage"):
-            yield CharDisplay(None, fetch=self.wk.fetch_bytes, rows=7, id="char")
+            yield CharDisplay(None, fetch=self.wk.core.fetch_bytes, rows=self.wk.image_rows(), id="char")
             yield Static("", id="prompt")
             yield Input(placeholder="Your response", id="answer")
             yield Static("", id="feedback")
@@ -430,19 +600,33 @@ class SessionScreen(Screen[list[Item]]):
 
     def on_mount(self) -> None:
         self.title = "Reviews" if self.mode == "review" else "Lesson quiz"
+        self.wk.core.begin_session(self.mode)
+        self.apply_compact()
         self.next_prompt()
+
+    def on_resize(self, _event) -> None:
+        self.apply_compact()
+
+    def apply_compact(self) -> None:
+        cfg = self.cfg
+        height = self.size.height or self.app.size.height
+        compact = cfg.ui_compact == "true" or (cfg.ui_compact == "auto" and height and height < 28)
+        self.set_class(compact, "compact")
+        self.query_one("#char", CharDisplay).set_rows(min(4, self.wk.image_rows()) if compact else self.wk.image_rows())
 
     # -- flow --------------------------------------------------------------
 
     def next_prompt(self) -> None:
         nxt = self.queue.next()
         if nxt is None:
-            self.finish()
+            self.finish()  # flushes synchronously: the screen is about to close
             return
+        self.flush_submit()
         self.current = nxt
         item, part = nxt
         s = item.subject
         self.awaiting = False
+        self.last_answer = None
         self.query_one("#char", CharDisplay).show(s)
         prompt = self.query_one("#prompt", Static)
         prompt.remove_class("meaning", "reading")
@@ -456,14 +640,29 @@ class SessionScreen(Screen[list[Item]]):
         self.query_one("#feedback", Static).update("")
         self.update_status()
 
+    def flush_submit(self, blocking: bool = False) -> None:
+        item = self.pending_submit
+        self.pending_submit = None
+        if item is None:
+            return
+        if blocking:  # the screen is about to close: an app exit would cancel a background worker
+            self._submit_now(item)
+        else:
+            self.submit(item)
+
+    def _submit_now(self, item: Item) -> None:
+        core = self.wk.core
+        err = core.submit_review(item) if self.mode == "review" else core.start_lesson(item)
+        if err:
+            self.failed.append(f"{item.subject.display_chars}: {err}")
+
     def update_status(self) -> None:
         q = self.queue
         done = len(q.finished)
         acc = f"{100 * q.correct_count // done}%" if done else "—"
         extra = "  · wrapping up" if q.wrapping_up else ""
-        self.query_one("#status", Static).update(
-            f"Remaining {q.remaining}   Done {done}/{q.total}   Accuracy {acc}{extra}   [F1 info · Esc wrap up]"
-        )
+        keys = f"[{key('info')} info · {key('undo')} undo · {key('leave')} {'quit' if self.popup else 'wrap up'}]"
+        self.query_one("#status", Static).update(f"Remaining {q.remaining}   Done {done}/{q.total}   Accuracy {acc}{extra}   {keys}")
 
     @on(Input.Changed, "#answer")
     def _changed(self, event: Input.Changed) -> None:
@@ -483,7 +682,8 @@ class SessionScreen(Screen[list[Item]]):
             return
         item, part = self.current
         s = item.subject
-        result = check_meaning(event.value, s) if part is Part.MEANING else check_reading(event.value, s)
+        typed = event.value
+        result = check_meaning(typed, s) if part is Part.MEANING else check_reading(typed, s)
         fb = self.query_one("#feedback", Static)
         box = self.query_one("#answer", Input)
         if result.verdict is Verdict.RETRY:
@@ -491,6 +691,7 @@ class SessionScreen(Screen[list[Item]]):
             return
         correct = result.verdict is Verdict.CORRECT
         completed = self.queue.mark(item, part, correct)
+        self.last_answer = (item, part, correct)
         box.add_class("correct" if correct else "incorrect")
         msg = Text()
         if correct:
@@ -501,26 +702,67 @@ class SessionScreen(Screen[list[Item]]):
                 msg.append("\n" + ", ".join(s.accepted_meanings[:6]), style="dim")
             elif part is Part.READING and len(s.accepted_readings) > 1:
                 msg.append("\n" + ", ".join(s.accepted_readings), style="dim")
+            if part is Part.READING and s.is_vocab and s.audio_urls and self.cfg.review_audio_autoplay:
+                self.wk.play_audio(s)
         else:
             msg.append("Incorrect", style="bold red")
+            msg.append(f"   you typed: {typed.strip()}", style="dim")
             if part is Part.MEANING:
-                msg.append("\nAccepted: " + ", ".join(s.accepted_meanings[:6]))
+                msg.append("\nAccepted: " + ", ".join(s.accepted_meanings[:6]), style="bold")
             else:
-                msg.append("\nAccepted: " + ", ".join(s.accepted_readings))
+                want = ""
+                if s.is_kanji and s.primary_reading_type:
+                    want = f" ({s.primary_reading_type.replace('yomi', "'yomi")})"
+                msg.append("\nAccepted: " + ", ".join(s.accepted_readings) + want, style="bold")
+            if self.cfg.review_show_mnemonic_on_miss:
+                mn = s.meaning_mnemonic if part is Part.MEANING else s.reading_mnemonic
+                if mn:
+                    body = mnemonic_text(mn)
+                    if len(body) > 420:
+                        body.truncate(420, overflow="ellipsis")
+                    msg.append("\n\n")
+                    msg.append_text(body)
         if completed:
             if self.mode == "review":
                 new_stage = next_srs_stage(item.assignment.srs_stage, item.incorrect)
                 msg.append("\n")
                 msg.append(f" {SRS_NAMES[new_stage]} ", style=f"bold white on {srs_color(new_stage)}")
-                self.submit_review(item)
-            else:
-                self.start_lesson(item)
-        msg.append("\n\nEnter to continue · F1 for details", style="dim")
+            self.pending_submit = item  # sent when you continue, so undo stays possible until then
+        msg.append(f"\n\nEnter to continue · {key('info')} details · {key('undo')} undo", style="dim")
         fb.update(msg)
         self.awaiting = True
         self.update_status()
+        if correct and self.cfg.review_lightning:
+            self.set_timer(0.5, self._lightning_advance)
+
+    def _lightning_advance(self) -> None:
+        if self.awaiting:
+            self.next_prompt()
+
+    def action_undo(self) -> None:
+        if not self.awaiting or not self.last_answer:
+            self.notify("Nothing to undo")
+            return
+        item, part, was_correct = self.last_answer
+        self.queue.unmark(item, part, was_correct)
+        self.pending_submit = None
+        self.last_answer = None
+        self.awaiting = False
+        self.current = (item, part)
+        box = self.query_one("#answer", Input)
+        box.remove_class("correct", "incorrect")
+        box.value = ""
+        box.focus()
+        self.query_one("#feedback", Static).update(Text("Undone — answer again", style="yellow"))
+        self.update_status()
 
     def finish(self) -> None:
+        self.flush_submit(blocking=True)
+        self.wk.core.end_session()
+        if self.popup:
+            self.dismiss(self.queue.finished)
+            return
+
         def close(_: None) -> None:
             self.dismiss(self.queue.finished)
 
@@ -529,32 +771,20 @@ class SessionScreen(Screen[list[Item]]):
     # -- API side effects --------------------------------------------------
 
     @work(thread=True, group="submit")
-    def submit_review(self, item: Item) -> None:
-        try:
-            resp = self.wk.api.create_review(item.assignment.id, item.wrong[Part.MEANING], item.wrong[Part.READING])
-            updated = resp.get("resources_updated") or {}
-            db = self.wk.db
-            if updated.get("assignment"):
-                db.upsert_assignment(updated["assignment"])
-            if updated.get("review_statistic"):
-                db.upsert_review_statistics([updated["review_statistic"]])
-            item.submitted = True
-        except (ApiError, Exception) as exc:  # noqa: BLE001
-            self.failed.append(f"{item.subject.display_chars}: {exc}")
-            self.app.call_from_thread(self.notify, f"Failed to submit {item.subject.display_chars}: {exc}", severity="error", timeout=8)
-
-    @work(thread=True, group="submit")
-    def start_lesson(self, item: Item) -> None:
-        try:
-            resp = self.wk.api.start_assignment(item.assignment.id)
-            if resp.get("object") == "assignment":
-                self.wk.db.upsert_assignment(resp)
-            item.submitted = True
-        except (ApiError, Exception) as exc:  # noqa: BLE001
-            self.failed.append(f"{item.subject.display_chars}: {exc}")
-            self.app.call_from_thread(self.notify, f"Failed to start {item.subject.display_chars}: {exc}", severity="error", timeout=8)
+    def submit(self, item: Item) -> None:
+        core = self.wk.core
+        err = core.submit_review(item) if self.mode == "review" else core.start_lesson(item)
+        if err:
+            self.failed.append(f"{item.subject.display_chars}: {err}")
+            self.app.call_from_thread(
+                self.notify, f"{item.subject.display_chars}: queued for retry ({err[:60]})", severity="warning", timeout=6
+            )
 
     # -- actions -----------------------------------------------------------
+
+    def action_audio(self) -> None:
+        if self.current and self.awaiting:
+            self.wk.play_audio(self.current[0].subject)
 
     def action_info(self) -> None:
         if not self.current:
@@ -566,7 +796,7 @@ class SessionScreen(Screen[list[Item]]):
 
     def action_leave(self) -> None:
         q = self.queue
-        if self.mode == "review" and not q.wrapping_up and q.pending:
+        if self.mode == "review" and not self.popup and not q.wrapping_up and q.pending:
             q.wrap_up()
             self.update_status()
             self.notify(f"Wrapping up: {q.remaining} item(s) left. Esc again to quit now.")
@@ -574,6 +804,8 @@ class SessionScreen(Screen[list[Item]]):
 
         def confirm(ok: bool | None) -> None:
             if ok:
+                self.flush_submit(blocking=True)
+                self.wk.core.end_session()
                 self.dismiss(q.finished)
 
         left = q.remaining
@@ -602,11 +834,9 @@ class SummaryScreen(Screen[None]):
         if n:
             head.append(f"   {100 * good // n}% correct first time")
         if self.failed:
-            head.append(f"\n{len(self.failed)} submission(s) failed and were NOT recorded:\n", style="bold red")
-            head.append("\n".join(self.failed), style="red")
+            head.append(f"\n{len(self.failed)} submission(s) could not be sent and are queued; they go out on the next sync.\n", style="bold yellow")
         yield Static(head, id="summary")
-        table: DataTable = DataTable(cursor_type="row", zebra_stripes=True)
-        yield table
+        yield DataTable(cursor_type="row", zebra_stripes=True)
         yield Footer()
 
     def on_mount(self) -> None:
@@ -633,23 +863,115 @@ class SummaryScreen(Screen[None]):
 # --------------------------------------------------------------------------- lessons
 
 
+class LessonPickerScreen(Screen[list[Item] | None]):
+    """Choose which available lessons to take."""
+
+    DEFAULT_CSS = """
+    LessonPickerScreen #hint { dock: bottom; height: 1; padding: 0 2; background: $panel; }
+    """
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+        Binding("space", "toggle", "Toggle"),
+        Binding("a", "all", "All/none"),
+        Binding("t", "cycle_type", "Type"),
+        Binding("enter", "start", "Start", priority=True),
+    ]
+    TYPES = [None, "radical", "kanji", "vocabulary"]
+
+    def __init__(self, items: list[Item]) -> None:
+        super().__init__()
+        self.items = items
+        self.selected: set[int] = set()
+        self.type_idx = 0
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield DataTable(cursor_type="row", zebra_stripes=True)
+        yield Static("Space select · a all/none · t type filter · Enter start selected", id="hint")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self.title = "Pick lessons"
+        table = self.query_one(DataTable)
+        table.add_columns("", "Type", "Item", "Meaning", "Level")
+        self.fill()
+        table.focus()
+
+    def visible(self) -> list[Item]:
+        t = self.TYPES[self.type_idx]
+        return [i for i in self.items if t is None or i.subject.type == t or (t == "vocabulary" and i.subject.type == "kana_vocabulary")]
+
+    def fill(self) -> None:
+        table = self.query_one(DataTable)
+        table.clear()
+        for it in self.visible():
+            s = it.subject
+            mark = Text("●", style="green") if s.id in self.selected else Text("○", style="dim")
+            table.add_row(mark, type_badge(s), Text(s.display_chars, style="bold"), s.primary_meaning, str(s.level), key=str(s.id))
+        self.sub_title = f"{len(self.selected)} selected of {len(self.items)} available"
+
+    def _current_id(self) -> int | None:
+        table = self.query_one(DataTable)
+        if not table.row_count:
+            return None
+        k = table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
+        return int(k) if k else None
+
+    def action_toggle(self) -> None:
+        sid = self._current_id()
+        if sid is None:
+            return
+        self.selected ^= {sid}
+        table = self.query_one(DataTable)
+        row = table.cursor_coordinate.row
+        self.fill()
+        table.move_cursor(row=min(row + 1, table.row_count - 1))
+
+    def action_all(self) -> None:
+        vis = {i.subject.id for i in self.visible()}
+        self.selected = set() if vis <= self.selected else self.selected | vis
+        self.fill()
+
+    def action_cycle_type(self) -> None:
+        self.type_idx = (self.type_idx + 1) % len(self.TYPES)
+        self.fill()
+
+    def action_start(self) -> None:
+        chosen = [i for i in self.items if i.subject.id in self.selected]
+        if not chosen:
+            sid = self._current_id()
+            chosen = [i for i in self.items if i.subject.id == sid]
+        if chosen:
+            self.dismiss(chosen)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class LessonScreen(Screen[None]):
     DEFAULT_CSS = """
     LessonScreen #page { height: 1fr; }
     LessonScreen #nav { dock: bottom; height: 1; padding: 0 2; background: $panel; }
     """
     BINDINGS = [
-        Binding("right", "next", "Next"),
+        Binding(key("next"), "next", "Next"),
         Binding("n", "next", "Next", show=False),
-        Binding("left", "prev", "Previous"),
+        Binding(key("prev"), "prev", "Previous"),
         Binding("p", "prev", "Previous", show=False),
-        Binding("escape", "leave", "Quit lessons"),
-    ]
+        Binding(key("audio"), "audio", "Audio"),
+        Binding(key("strokes"), "strokes", "Strokes"),
+        Binding(key("leave"), "leave", "Quit lessons"),
+    ] + ([Binding("l", "next", "Next", show=False), Binding("h", "prev", "Previous", show=False)] if _vim() else [])
 
-    def __init__(self, items: list[Item]) -> None:
+    def __init__(self, items: list[Item], popup: bool = False) -> None:
         super().__init__()
         self.items = items
+        self.popup = popup
         self.index = 0
+
+    @property
+    def wk(self) -> "WKApp":
+        return self.app  # type: ignore[return-value]
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -672,6 +994,8 @@ class LessonScreen(Screen[None]):
         self.query_one("#nav", Static).update(
             f"Lesson {index + 1}/{len(self.items)}   ←/→ navigate   " + ("→ or Enter: start quiz" if last else "")
         )
+        if s.is_vocab and s.audio_urls and settings().lessons_audio_autoplay:
+            self.wk.play_audio(s)
 
     def action_next(self) -> None:
         if self.index + 1 < len(self.items):
@@ -683,6 +1007,14 @@ class LessonScreen(Screen[None]):
         if self.index > 0:
             self.show(self.index - 1)
 
+    def action_audio(self) -> None:
+        self.wk.play_audio(self.items[self.index].subject)
+
+    def action_strokes(self) -> None:
+        s = self.items[self.index].subject
+        if s.is_kanji and s.characters:
+            self.app.push_screen(StrokeScreen(s))
+
     def on_key(self, event) -> None:
         if event.key == "enter" and self.index == len(self.items) - 1:
             self.start_quiz()
@@ -691,7 +1023,7 @@ class LessonScreen(Screen[None]):
         def close(_: object) -> None:
             self.dismiss()
 
-        self.app.push_screen(SessionScreen("lesson", self.items), close)
+        self.app.push_screen(SessionScreen("lesson", self.items, popup=self.popup), close)
 
     def action_leave(self) -> None:
         def maybe_close(ok: bool | None) -> None:

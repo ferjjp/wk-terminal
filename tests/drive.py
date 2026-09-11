@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import resvg_py
 from fixtures import FakeAPI, build_db
 from wanikani_tui.app import WKApp
+from wanikani_tui.core import Core
 
 OUT = Path(sys.argv[1] if len(sys.argv) > 1 else ".")
 OUT.mkdir(parents=True, exist_ok=True)
@@ -29,7 +30,7 @@ async def main() -> None:
         dbfile.unlink()
     db = build_db(dbfile)
     api = FakeAPI()
-    app = WKApp(api, db, skip_sync=True)
+    app = WKApp(Core(api, db), skip_sync=True)
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
         shot(app, "01-dashboard")
@@ -78,7 +79,7 @@ async def main() -> None:
         shot(app, "08-review-summary")
         await pilot.press("escape")
         await pilot.pause()
-        print("reviews submitted:", api.reviews)
+        print("reviews submitted:", api.submitted)
         # lessons
         await pilot.press("l")
         await pilot.pause()

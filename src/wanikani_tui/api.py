@@ -40,8 +40,19 @@ class WaniKani:
     # -- low level -----------------------------------------------------------
 
     def _request(self, method: str, url: str, **kw: Any) -> dict[str, Any]:
+        last_exc: Exception | None = None
         for attempt in range(5):
-            resp = self._client.request(method, url, **kw)
+            try:
+                resp = self._client.request(method, url, **kw)
+            except httpx.HTTPError as exc:  # connection problems: back off and retry
+                last_exc = exc
+                if attempt >= 2:
+                    raise ApiError(f"{method} {url}: {exc}") from exc
+                time.sleep(1.0 * 2 ** attempt)
+                continue
+            if resp.status_code >= 500 and attempt < 2:
+                time.sleep(1.0 * 2 ** attempt)
+                continue
             if resp.status_code == 429:
                 reset = resp.headers.get("RateLimit-Reset")
                 wait = 5.0
@@ -59,7 +70,7 @@ class WaniKani:
                     detail = resp.text
                 raise ApiError(f"{method} {url} -> {resp.status_code}: {detail}")
             return resp.json()
-        raise ApiError(f"{method} {url}: rate limited too many times")
+        raise ApiError(f"{method} {url}: rate limited too many times" + (f" ({last_exc})" if last_exc else ""))
 
     def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         clean = {}
@@ -101,6 +112,28 @@ class WaniKani:
 
     def review_statistics(self, updated_after: str | None = None) -> Iterator[dict[str, Any]]:
         return self.paginate("review_statistics", {"updated_after": updated_after})
+
+    def reviews(self, updated_after: str | None = None) -> Iterator[dict[str, Any]]:
+        return self.paginate("reviews", {"updated_after": updated_after})
+
+    def level_progressions(self, updated_after: str | None = None) -> Iterator[dict[str, Any]]:
+        return self.paginate("level_progressions", {"updated_after": updated_after})
+
+    def create_study_material(self, subject_id: int, synonyms: list[str] | None = None, note: str | None = None) -> dict[str, Any]:
+        body: dict[str, Any] = {"subject_id": subject_id}
+        if synonyms is not None:
+            body["meaning_synonyms"] = synonyms
+        if note is not None:
+            body["meaning_note"] = note
+        return self._request("POST", "study_materials", json={"study_material": body})
+
+    def update_study_material(self, material_id: int, synonyms: list[str] | None = None, note: str | None = None) -> dict[str, Any]:
+        body: dict[str, Any] = {}
+        if synonyms is not None:
+            body["meaning_synonyms"] = synonyms
+        if note is not None:
+            body["meaning_note"] = note
+        return self._request("PUT", f"study_materials/{material_id}", json={"study_material": body})
 
     def create_review(self, assignment_id: int, incorrect_meaning: int, incorrect_reading: int) -> dict[str, Any]:
         body = {

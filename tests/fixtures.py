@@ -104,7 +104,7 @@ def build_db(path) -> Database:
 
 class FakeAPI:
     def __init__(self):
-        self.reviews = []
+        self.submitted = []
         self.started = []
 
     def user(self):
@@ -122,13 +122,47 @@ class FakeAPI:
     def review_statistics(self, updated_after=None):
         return iter([])
 
+    def reviews(self, updated_after=None):
+        return iter([{"id": 5000 + i, "object": "review", "data": {"subject_id": 10, "created_at": ts(-24 * i), "starting_srs_stage": 2,
+                      "ending_srs_stage": 3 if i % 3 else 1, "incorrect_meaning_answers": 0 if i % 3 else 1, "incorrect_reading_answers": 0}}
+                     for i in range(1, 40)])
+
+    def level_progressions(self, updated_after=None):
+        return iter([{"id": 7001, "object": "level_progression", "data": {"level": 1, "unlocked_at": ts(-24 * 20), "started_at": ts(-24 * 20),
+                      "passed_at": None, "completed_at": None, "abandoned_at": None}}])
+
+    materials = {}
+
+    def create_study_material(self, subject_id, synonyms=None, note=None):
+        d = {"subject_id": subject_id, "meaning_synonyms": synonyms or [], "meaning_note": note}
+        self.materials[subject_id] = d
+        return {"id": 9000 + subject_id, "object": "study_material", "data": d}
+
+    def update_study_material(self, material_id, synonyms=None, note=None):
+        sid = material_id - 9000 if material_id >= 9000 else 10
+        d = self.materials.get(sid, {"subject_id": sid, "meaning_synonyms": [], "meaning_note": None})
+        if synonyms is not None:
+            d["meaning_synonyms"] = synonyms
+        if note is not None:
+            d["meaning_note"] = note
+        self.materials[sid] = d
+        return {"id": material_id, "object": "study_material", "data": d}
+
+    fail = False
+
     def create_review(self, assignment_id, incorrect_meaning, incorrect_reading):
-        self.reviews.append((assignment_id, incorrect_meaning, incorrect_reading))
+        if self.fail:
+            from wanikani_tui.api import ApiError
+            raise ApiError("POST reviews: connection refused")
+        self.submitted.append((assignment_id, incorrect_meaning, incorrect_reading))
         a = next(x for x in ASSIGNMENTS if x["id"] == assignment_id)
         new = {"id": a["id"], "object": "assignment", "data": dict(a["data"], srs_stage=a["data"]["srs_stage"] + 1, available_at=ts(8))}
         return {"id": 1, "object": "review", "data": {}, "resources_updated": {"assignment": new}}
 
     def start_assignment(self, assignment_id):
+        if self.fail:
+            from wanikani_tui.api import ApiError
+            raise ApiError("PUT start: connection refused")
         self.started.append(assignment_id)
         a = next(x for x in ASSIGNMENTS if x["id"] == assignment_id)
         return {"id": a["id"], "object": "assignment", "data": dict(a["data"], started_at=ts(0), srs_stage=1, available_at=ts(4))}

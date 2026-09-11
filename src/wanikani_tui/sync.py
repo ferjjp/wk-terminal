@@ -27,6 +27,7 @@ def sync(
     full: bool = False,
     progress: Progress | None = None,
     cancelled: Callable[[], bool] | None = None,
+    light: bool = False,
 ) -> dict[str, int]:
     """Sync subjects, assignments, study materials and review stats. Returns counts."""
     say = progress or (lambda _msg: None)
@@ -41,7 +42,11 @@ def sync(
         ("assignments", api.assignments, db.upsert_assignments),
         ("study_materials", api.study_materials, db.upsert_study_materials),
         ("review_statistics", api.review_statistics, db.upsert_review_statistics),
+        ("level_progressions", api.level_progressions, db.upsert_level_progressions),
+        ("reviews", api.reviews, db.upsert_reviews),
     ]
+    if light:  # the daemon's frequent refresh: only what changes between sessions
+        resources = [r for r in resources if r[0] in ("assignments", "study_materials", "review_statistics")]
     for name, fetch, store in resources:
         key = f"synced:{name}"
         since = None if full else db.get_meta(key)

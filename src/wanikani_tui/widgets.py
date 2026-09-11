@@ -13,7 +13,9 @@ from textual import work
 
 from .models import Subject, TYPE_COLOR
 
-IMAGE_MODE = os.environ.get("WK_IMAGES", "auto").lower()
+from .config import settings
+
+IMAGE_MODE = (os.environ.get("WK_IMAGES") or settings().images_mode or "auto").lower()
 
 
 def _kitty_capable_outer_terminal() -> bool:
@@ -115,6 +117,11 @@ class CharDisplay(Static):
     def on_mount(self) -> None:
         self.show(self.subject)
 
+    def set_rows(self, rows: int) -> None:
+        self.rows = rows
+        if self._img is not None:
+            self._img.styles.height = rows
+
     def show(self, subject: Subject | None) -> None:
         self.subject = subject
         if subject is None:
@@ -150,3 +157,53 @@ class CharDisplay(Static):
 
 def type_badge(subject: Subject) -> Text:
     return Text(f" {subject.label} ", style=f"bold white on {TYPE_COLOR[subject.type]}")
+
+
+class Chip(Static, can_focus=True):
+    """A related-subject chip: coloured characters + meaning; Enter opens it. Image radicals get a small picture."""
+
+    DEFAULT_CSS = """
+    Chip { width: auto; height: auto; padding: 0 1; }
+    Chip:focus { background: $accent 35%; }
+    Chip .wk-image { width: auto; height: 2; }
+    """
+    BINDINGS = [("enter", "open", "Open")]
+
+    def __init__(self, subject: Subject, fetch: Callable[[str], bytes] | None = None, **kw) -> None:
+        super().__init__(**kw)
+        self.subject = subject
+        self.fetch = fetch
+        self._img = None
+
+    def compose(self):
+        s = self.subject
+        if ImageWidget is not None and not s.characters and s.image_url and self.fetch:
+            self._img = ImageWidget(None, classes="wk-image")
+            yield self._img
+
+    def on_mount(self) -> None:
+        s = self.subject
+        t = Text()
+        if self._img is None:
+            t.append(f" {s.display_chars} ", style=f"bold white on {s.color}")
+            t.append(f" {s.primary_meaning}", style="dim")
+        else:
+            t.append(f" {s.primary_meaning}", style="dim")
+            self._load(s, s.image_url)
+        self.update(t)
+
+    @work(thread=True)
+    def _load(self, subject: Subject, url: str) -> None:
+        from .images import radical_image
+
+        try:
+            img = radical_image(url, subject.color, self.fetch, px=40, pad=8)
+        except Exception:  # noqa: BLE001
+            return
+        if self._img is not None:
+            self.app.call_from_thread(setattr, self._img, "image", img)
+
+    def action_open(self) -> None:
+        from .screens import SubjectScreen
+
+        self.app.push_screen(SubjectScreen(self.subject))

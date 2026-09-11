@@ -15,9 +15,33 @@ SRS_NAMES = {
     0: "Locked", 1: "Apprentice I", 2: "Apprentice II", 3: "Apprentice III", 4: "Apprentice IV",
     5: "Guru I", 6: "Guru II", 7: "Master", 8: "Enlightened", 9: "Burned",
 }
-SRS_COLOR = {
+SRS_COLOR_WK = {
     "apprentice": "#dd0093", "guru": "#882d9e", "master": "#294ddb", "enlightened": "#0093dd", "burned": "#434343",
 }
+# Okabe-Ito palette, distinguishable under the common colour-vision deficiencies
+SRS_COLOR_CB = {
+    "apprentice": "#e69f00", "guru": "#56b4e9", "master": "#009e73", "enlightened": "#0072b2", "burned": "#7f7f7f",
+}
+
+
+def _palette() -> dict[str, str]:
+    try:
+        from .config import settings
+
+        return SRS_COLOR_CB if settings().ui_colorblind else SRS_COLOR_WK
+    except Exception:  # noqa: BLE001
+        return SRS_COLOR_WK
+
+
+class _Palette(dict):
+    def __getitem__(self, key: str) -> str:  # type: ignore[override]
+        return _palette()[key]
+
+    def items(self):  # type: ignore[override]
+        return _palette().items()
+
+
+SRS_COLOR: dict[str, str] = _Palette()
 
 
 def srs_group(stage: int) -> str:
@@ -35,7 +59,7 @@ def srs_group(stage: int) -> str:
 
 
 def srs_color(stage: int) -> str:
-    return SRS_COLOR.get(srs_group(stage), "#777777")
+    return _palette().get(srs_group(stage), "#777777")
 
 
 @dataclass
@@ -48,7 +72,9 @@ class Subject:
     @classmethod
     def from_raw(cls, raw: dict[str, Any], study_material: dict[str, Any] | None = None) -> "Subject":
         syn = list((study_material or {}).get("meaning_synonyms") or [])
-        return cls(id=raw["id"], type=raw["object"], data=raw["data"], user_synonyms=syn)
+        s = cls(id=raw["id"], type=raw["object"], data=raw["data"], user_synonyms=syn)
+        s.user_note = (study_material or {}).get("meaning_note") or None
+        return s
 
     # -- basics ---------------------------------------------------------------
     @property
@@ -192,6 +218,8 @@ class Subject:
     @property
     def audio_urls(self) -> list[dict[str, Any]]:
         return self.data.get("pronunciation_audios", [])
+
+    user_note: str | None = None
 
 
 @dataclass

@@ -102,3 +102,38 @@ def radical_image(url: str, color: str, fetch, px: int = 160, pad: int = 24) -> 
     white = Image.new("RGBA", png.size, (255, 255, 255, 255))
     img.paste(white, ((box_w - w) // 2, (box_h - h) // 2), mask)
     return img
+
+
+STROKE_COLORS = ["#ff5f5f", "#ffb347", "#ffe66d", "#7be0ad", "#5fc8ff", "#9d8cff", "#ff8ad8", "#c0ff8a", "#ffd18a", "#8affe3"]
+KANJIVG_URL = "https://raw.githubusercontent.com/KanjiVG/kanjivg/master/kanji/{code}.svg"
+
+
+def stroke_image(char: str, fetch, px: int = 320) -> Image.Image | None:
+    """Stroke order from KanjiVG (CC BY-SA 3.0): each stroke in its own colour, numbered."""
+    import re
+
+    code = f"{ord(char):05x}"
+    svg_file = image_cache_dir() / f"kanjivg-{code}.svg"
+    if svg_file.exists():
+        svg = svg_file.read_text()
+    else:
+        try:
+            svg = fetch(KANJIVG_URL.format(code=code)).decode("utf-8")
+        except Exception:  # noqa: BLE001
+            return None
+        svg_file.write_text(svg)
+    counter = {"i": 0}
+
+    def colour(m: "re.Match[str]") -> str:
+        c = STROKE_COLORS[counter["i"] % len(STROKE_COLORS)]
+        counter["i"] += 1
+        return f'<path style="stroke:{c};stroke-width:4;fill:none" '
+
+    svg = re.sub(r"<path ", colour, svg)
+    svg = svg.replace("fill:#808080", "fill:#ffffff").replace("font-size:8", "font-size:7")
+    png = Image.open(BytesIO(_svg_to_png(svg.encode("utf-8"), px))).convert("RGBA")
+    pad = 16
+    box = Image.new("RGBA", (png.width + 2 * pad, png.height + 2 * pad), (0, 0, 0, 0))
+    ImageDraw.Draw(box).rounded_rectangle((0, 0, box.width - 1, box.height - 1), radius=pad, fill=(40, 40, 48, 255))
+    box.alpha_composite(png, (pad, pad))
+    return box
