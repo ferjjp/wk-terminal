@@ -29,16 +29,12 @@ def _kitty_capable_outer_terminal() -> bool:
 
 
 if IMAGE_MODE != "none":
-    from textual_image.renderable import Image as _AutoRenderable
-    from textual_image.renderable.halfcell import Image as _HalfcellRenderable
     from textual_image.widget import HalfcellImage, Image as AutoImage, TGPImage, UnicodeImage, SixelImage
 
-    if (
-        IMAGE_MODE == "auto"
-        and os.environ.get("TMUX")
-        and _AutoRenderable is _HalfcellRenderable
-        and _kitty_capable_outer_terminal()
-    ):
+    # Inside tmux the capability queries are answered by tmux itself (tmux 3.6 advertises Sixel, which
+    # ghostty and kitty cannot draw) and ghostty's kitty-graphics answer never comes back. So under tmux,
+    # trust the outer terminal's identity instead of the negotiation.
+    if IMAGE_MODE == "auto" and os.environ.get("TMUX") and _kitty_capable_outer_terminal():
         AutoImage = TGPImage  # type: ignore[misc]
     _Base = {
         "tgp": TGPImage, "kitty": TGPImage, "halfcell": HalfcellImage, "unicode": UnicodeImage, "sixel": SixelImage,

@@ -14,7 +14,10 @@ def run() -> int:
     from textual_image._terminal import get_cell_size
     from textual_image.renderable import sixel, tgp
 
-    print(f"auto-selected renderer: {renderable.Image.__module__.rsplit('.', 1)[-1]}")
+    print(f"renderer negotiated with the terminal: {renderable.Image.__module__.rsplit('.', 1)[-1]}")
+    from .widgets import ImageWidget
+
+    print(f"renderer wk will actually use: {ImageWidget._Renderable.__module__.rsplit('.', 1)[-1] if ImageWidget else 'none'}")
     print(f"cell size (px): {get_cell_size()}")
     print(f"kitty graphics query answered OK: {tgp.query_terminal_support()}")
     print(f"sixel query answered OK: {sixel.query_terminal_support()}")
