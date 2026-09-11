@@ -274,7 +274,7 @@ class StatsScreen(Screen[None]):
         self.dismiss()
 
 
-class WKApp(App[None]):
+class WKApp(App[str | None]):
     TITLE = "WaniKani"
     CSS = """
     Screen { background: $background; }
@@ -318,6 +318,10 @@ class WKApp(App[None]):
 
     def image_rows(self) -> int:
         return max(2, self.core.cfg.images_height)
+
+    def open_full_app(self) -> None:
+        """From a popup: leave with a result the CLI turns into the full interface in the same terminal."""
+        self.exit(result="full")
 
     # -- helpers used by screens ------------------------------------------------
 

@@ -74,10 +74,13 @@ and the daemon's cadence, quiet hours, popup behaviour and terminal command.
 ## Daemon
 
 `wk daemon` refreshes assignments every 10 minutes and, when reviews are due, sends a
-desktop notification with a **Review now** button (at most every 30 minutes, not during
-quiet hours). Clicking it opens `wk pop` in a small ghostty window with the oldest due
-review. With `popup = "auto"` the window opens without asking; with `popup = "none"` you
-only get the notification. `notify_lessons = true` also nudges when lessons are waiting.
+desktop notification (over D-Bus, so clicks work on GNOME, KDE, mako, dunst…) at most
+every 30 minutes and not during quiet hours. Clicking the notification, or its
+**Review now** button, opens `wk pop` in a small ghostty window: one review, oldest due
+first, or one new item when nothing is due. Inside that window `F2` opens the full
+interface in place. With `popup = "auto"` the window opens without asking; with
+`popup = "none"` you only get the notification. `notify_lessons = true` also nudges when
+lessons are waiting.
 
 ```sh
 wk daemon --once        # try one cycle in the foreground

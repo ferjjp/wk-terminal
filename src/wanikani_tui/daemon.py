@@ -51,22 +51,11 @@ def open_popup(cfg: Settings) -> subprocess.Popen | None:
 
 
 def notify(title: str, body: str, action: bool, timeout_s: int = 120) -> str:
-    """Send a desktop notification. With `action`, block until clicked/closed and return the action id."""
-    if not shutil.which("notify-send"):
-        log.warning("notify-send not found")
-        return ""
-    cmd = ["notify-send", "--app-name=WaniKani", "--icon=accessories-dictionary", "--urgency=normal", f"--expire-time={timeout_s * 1000}"]
-    if action:
-        cmd += ["--action=review=Review now", "--action=later=Later"]
-    cmd += [title, body]
-    try:
-        out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s + 5)
-        return out.stdout.strip()
-    except subprocess.TimeoutExpired:
-        return ""
-    except OSError as exc:
-        log.error("notify-send failed: %s", exc)
-        return ""
+    """Desktop notification; with `action`, block until clicked/closed and return the action id."""
+    from . import notify as dbus_notify
+
+    actions = [("default", "Review now"), ("review", "Review now"), ("later", "Later")] if action else None
+    return dbus_notify.send(title, body, actions=actions, timeout_s=timeout_s)
 
 
 def run(core: Core, once: bool = False) -> int:
@@ -102,8 +91,8 @@ def run(core: Core, once: bool = False) -> int:
                 open_popup(cfg)
             elif cfg.daemon_popup == "notify":
                 choice = notify(title, body, action=True)
-                log.info("notification answered: %r", choice or "(closed)")
-                if choice == "review":
+                log.info("notification answered: %r", choice or "(closed or expired)")
+                if choice in ("review", "default"):
                     open_popup(cfg)
             else:
                 notify(title, body, action=False)

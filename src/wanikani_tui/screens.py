@@ -565,6 +565,7 @@ class SessionScreen(Screen[list[Item]]):
         Binding(key("leave"), "leave", "Wrap up / quit"),
         Binding(key("info"), "info", "Info"),
         Binding(key("undo"), "undo", "Undo"),
+        Binding("f2", "full_app", "Open full WaniKani"),
         Binding(key("audio").replace("a", "ctrl+a") if key("audio") == "a" else key("audio"), "audio", "Audio", show=False),
     ]
 
@@ -661,6 +662,13 @@ class SessionScreen(Screen[list[Item]]):
         done = len(q.finished)
         acc = f"{100 * q.correct_count // done}%" if done else "—"
         extra = "  · wrapping up" if q.wrapping_up else ""
+        if self.popup:
+            total_due = self.wk.core.due_counts()[0]
+            more = f" · {total_due - done} more due" if total_due - done > 0 else ""
+            self.query_one("#status", Static).update(
+                f"Quick review {done + 1 if q.remaining else done}/{q.total}{more}   [F2 open full WaniKani · {key('leave')} close]"
+            )
+            return
         keys = f"[{key('info')} info · {key('undo')} undo · {key('leave')} {'quit' if self.popup else 'wrap up'}]"
         self.query_one("#status", Static).update(f"Remaining {q.remaining}   Done {done}/{q.total}   Accuracy {acc}{extra}   {keys}")
 
@@ -785,6 +793,11 @@ class SessionScreen(Screen[list[Item]]):
     def action_audio(self) -> None:
         if self.current and self.awaiting:
             self.wk.play_audio(self.current[0].subject)
+
+    def action_full_app(self) -> None:
+        self.flush_submit(blocking=True)
+        self.wk.core.end_session()
+        self.wk.open_full_app()
 
     def action_info(self) -> None:
         if not self.current:
@@ -960,6 +973,7 @@ class LessonScreen(Screen[None]):
         Binding("p", "prev", "Previous", show=False),
         Binding(key("audio"), "audio", "Audio"),
         Binding(key("strokes"), "strokes", "Strokes"),
+        Binding("f2", "full_app", "Open full WaniKani"),
         Binding(key("leave"), "leave", "Quit lessons"),
     ] + ([Binding("l", "next", "Next", show=False), Binding("h", "prev", "Previous", show=False)] if _vim() else [])
 
@@ -991,8 +1005,10 @@ class LessonScreen(Screen[None]):
         page.mount(SubjectDetail(s))
         self.sub_title = f"{index + 1} / {len(self.items)} · {s.label} {s.display_chars}"
         last = index == len(self.items) - 1
+        label = "New item" if self.popup else "Lesson"
         self.query_one("#nav", Static).update(
-            f"Lesson {index + 1}/{len(self.items)}   ←/→ navigate   " + ("→ or Enter: start quiz" if last else "")
+            f"{label} {index + 1}/{len(self.items)}   ←/→ navigate   " + ("→ or Enter: start quiz" if last else "")
+            + ("   [F2 open full WaniKani]" if self.popup else "")
         )
         if s.is_vocab and s.audio_urls and settings().lessons_audio_autoplay:
             self.wk.play_audio(s)
@@ -1025,7 +1041,14 @@ class LessonScreen(Screen[None]):
 
         self.app.push_screen(SessionScreen("lesson", self.items, popup=self.popup), close)
 
+    def action_full_app(self) -> None:
+        self.wk.open_full_app()
+
     def action_leave(self) -> None:
+        if self.popup:
+            self.dismiss()
+            return
+
         def maybe_close(ok: bool | None) -> None:
             if ok:
                 self.dismiss()

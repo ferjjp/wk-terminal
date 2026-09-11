@@ -108,7 +108,9 @@ def main(argv: list[str] | None = None) -> int:
         from .app import WKApp
 
         if command == "pop":
-            WKApp(core, skip_sync=True, popup=True).run()
+            result = WKApp(core, skip_sync=True, popup=True).run()
+            if result == "full":
+                WKApp(core).run()
             return 0
         WKApp(core, full_sync=args.full_sync, skip_sync=args.no_sync).run()
         return 0
