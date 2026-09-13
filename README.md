@@ -23,8 +23,10 @@ review window.
 3. Install the `wk` command:
 
    ```sh
-   uv tool install --editable .
+   uv tool install git+https://github.com/ferjjp/wk-terminal.git
    ```
+
+   or, from a clone, `uv tool install --editable .` so edits are picked up live.
 
 The first start downloads every subject (~10 requests) into
 `~/.local/share/wanikani-tui/cache.sqlite3`. Later starts sync incrementally in the
