@@ -24,8 +24,14 @@ def run() -> int:
 
     print(f"renderer wk will actually use: {ImageWidget._Renderable.__module__.rsplit('.', 1)[-1] if ImageWidget else 'none'}")
     print(f"cell size (px): {get_cell_size()}")
-    print(f"kitty graphics query answered OK: {tgp.query_terminal_support()}")
-    print(f"sixel query answered OK: {sixel.query_terminal_support()}")
+    def safe(fn):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 - no tty, or a terminal that doesn't answer
+            return f"n/a ({type(exc).__name__})"
+
+    print(f"kitty graphics query answered OK: {safe(tgp.query_terminal_support)}")
+    print(f"sixel query answered OK: {safe(sixel.query_terminal_support)}")
 
     from rich.console import Console
     from textual_image.renderable.halfcell import Image as Half
