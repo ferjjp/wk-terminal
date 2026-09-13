@@ -51,3 +51,14 @@ def test_assignments_and_stats(db):
     db.reviews_per_day()
     db.accuracy_by_type()
     db.level_progress((db.get_user() or {}).get("level", 1))
+
+
+def test_smart_picker_on_real_data(db):
+    from wanikani_tui.core import Core
+
+    core = Core(api=None, db=db)  # type: ignore[arg-type]
+    if not db.reviews_available():
+        pytest.skip("nothing due")
+    picks = core.pick_popup_reviews(3)
+    assert 1 <= len(picks) <= 3
+    assert all(p.subject.id != q.subject.id for p in picks for q in picks if p is not q)

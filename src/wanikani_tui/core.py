@@ -334,7 +334,10 @@ class Core:
 
         header, rows = self.db.export_rows(what)
         if path and path != "-":
-            with open(path, "w", newline="", encoding="utf-8") as f:
+            from pathlib import Path
+
+            Path(path).expanduser().parent.mkdir(parents=True, exist_ok=True)
+            with open(Path(path).expanduser(), "w", newline="", encoding="utf-8") as f:
                 w = csv.writer(f)
                 w.writerow(header)
                 w.writerows(rows)
