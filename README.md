@@ -84,7 +84,8 @@ new item when nothing is due. The review is chosen to be the one you most need: 
 low SRS stages, long-overdue and weak-accuracy items score highest, kanji slightly above
 vocabulary, and anything you answered in the last hour is skipped
 (`popup_pick = "oldest"` restores plain oldest-first). Inside that window `F2` opens the full
-interface in place. With `popup = "auto"` the window opens without asking; with
+interface in place. When you finish, a prompt offers one more (`Enter`), close (`Esc`) or the full app (`F2`).
+With `popup = "auto"` the window opens without asking; with
 `popup = "none"` you only get the notification. `notify_lessons = true` also nudges when
 lessons are waiting.
 
@@ -95,7 +96,7 @@ journalctl --user -u wanikani-tui -f
 ```
 
 The popup command is configurable (`terminal = ...`), so any terminal that can run a
-command in a new window works.
+command in a new window works. The daemon reloads `config.toml` whenever it changes.
 
 ## macOS
 
@@ -131,6 +132,14 @@ For a due counter in the tmux status line:
 set -g status-right '#(wk due --format tmux) %H:%M'
 ```
 
+## Fonts
+
+Kanji images are drawn with a system Japanese font (Noto Sans CJK on Linux, Hiragino on
+macOS). The font is not bundled: it is 16 MB per weight, and your terminal needs its own
+Japanese font anyway to show kana and kanji in text. `wk doctor` reports which font was
+found and prints the install command for your system, e.g. `sudo apt install fonts-noto-cjk`
+or `brew install --cask font-noto-sans-cjk-jp`. `WK_FONT=/path/to/font.ttc` overrides it.
+
 ## Development
 
 ```sh
@@ -140,4 +149,11 @@ uv run python tests/drive2.py out/   # stats, picker, filters, synonyms, strokes
 uv run python tests/pty_capture.py "r,a,enter" out.bin   # kitty-graphics traffic vs painted cells
 ```
 
-Stroke order data comes from [KanjiVG](http://kanjivg.tagaini.net) (CC BY-SA 3.0).
+## Licence and credits
+
+MIT licence, see `LICENSE`. This is an unofficial client; WaniKani and its content belong to
+Tofugu LLC and are used through the official API under your own account. Stroke-order
+diagrams come from [KanjiVG](http://kanjivg.tagaini.net) by Ulrich Apel (CC BY-SA 3.0),
+fetched on demand and cached locally. Kana conversion by
+[wanakana-python](https://github.com/Starwort/wanakana-python); terminal images by
+[textual-image](https://github.com/lnqs/textual-image).

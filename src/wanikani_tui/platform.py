@@ -83,3 +83,20 @@ def notification_backend() -> str:
         if shutil.which("osascript"):
             return "mac-osascript"
     return "none"
+
+
+def cjk_font_install_hint() -> str:
+    """How to get a Japanese-capable font on this system (for wk doctor / first run)."""
+    if IS_MAC:
+        return "macOS ships Hiragino Sans; if it is missing run:  brew install --cask font-noto-sans-cjk-jp"
+    if shutil.which("apt-get"):
+        return "sudo apt install fonts-noto-cjk"
+    if shutil.which("dnf"):
+        return "sudo dnf install google-noto-sans-cjk-fonts"
+    if shutil.which("pacman"):
+        return "sudo pacman -S noto-fonts-cjk"
+    if shutil.which("zypper"):
+        return "sudo zypper install noto-sans-cjk-fonts"
+    if shutil.which("apk"):
+        return "sudo apk add font-noto-cjk"
+    return "install Noto Sans CJK (https://github.com/notofonts/noto-cjk) or set WK_FONT=/path/to/font.ttc"

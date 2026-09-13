@@ -299,6 +299,13 @@ class WKApp(App[str | None]):
             self._start_popup()
             return
         self.push_screen(DashboardScreen())
+        from .images import font_path
+
+        if font_path() is None and not self.core.db.get_meta("font_warned"):
+            from .platform import cjk_font_install_hint
+
+            self.notify(f"No Japanese font found for kanji images. Install one: {cjk_font_install_hint()}", severity="warning", timeout=15)
+            self.core.db.set_meta("font_warned", "1")
         if not self.skip_sync or self.core.needs_full_sync():
             self.run_sync(full=self.full_sync or self.core.needs_full_sync())
 

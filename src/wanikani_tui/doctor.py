@@ -33,7 +33,13 @@ def run() -> int:
 
     from .images import font_path, text_image
 
-    print(f"CJK font: {font_path()}")
+    from .platform import cjk_font_install_hint
+
+    fp = font_path()
+    print(f"CJK font for images: {fp or 'NOT FOUND'}")
+    if not fp:
+        print(f"   kanji images will fall back to a tiny bitmap font; install one with:  {cjk_font_install_hint()}")
+    print("   (your terminal also needs a Japanese-capable font for kana/kanji in text; ghostty and kitty fall back automatically)")
     img = text_image("水", "#ff00aa")
     console = Console()
     for name, cls in (("kitty graphics (tgp)", TGP), ("half cells", Half)):

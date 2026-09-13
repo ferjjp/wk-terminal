@@ -521,6 +521,51 @@ class BrowseScreen(Screen[None]):
 # --------------------------------------------------------------------------- sessions
 
 
+class OneMoreScreen(ModalScreen[bool]):
+    """After a popup review: keep going or close."""
+
+    DEFAULT_CSS = """
+    OneMoreScreen { align: center middle; }
+    OneMoreScreen > Static { width: 56; padding: 1 2; border: thick $success; background: $surface; }
+    """
+    BINDINGS = [
+        Binding("enter", "more", "One more", priority=True),
+        Binding("space", "more", "One more", show=False),
+        Binding("escape", "close", "Close"),
+        Binding("q", "close", "Close", show=False),
+        Binding("f2", "full", "Open full WaniKani"),
+    ]
+
+    def __init__(self, done: int, correct: int, remaining: int) -> None:
+        super().__init__()
+        self.done, self.correct, self.remaining = done, correct, remaining
+
+    def compose(self) -> ComposeResult:
+        t = Text()
+        t.append(f"{self.done} done", style="bold")
+        t.append(f" · {self.correct} correct first time\n\n")
+        if self.remaining:
+            t.append(f"{self.remaining} more due.  ", style="dim")
+            t.append("Enter", style="bold")
+            t.append(" one more   ")
+        else:
+            t.append("Queue empty.  ", style="dim")
+        t.append("Esc", style="bold")
+        t.append(" close   ")
+        t.append("F2", style="bold")
+        t.append(" full app")
+        yield Static(t)
+
+    def action_more(self) -> None:
+        self.dismiss(True if self.remaining else False)
+
+    def action_close(self) -> None:
+        self.dismiss(False)
+
+    def action_full(self) -> None:
+        self.app.open_full_app()  # type: ignore[attr-defined]
+
+
 class ConfirmScreen(ModalScreen[bool]):
     DEFAULT_CSS = """
     ConfirmScreen { align: center middle; }
@@ -581,6 +626,8 @@ class SessionScreen(Screen[list[Item]]):
         )
         self.current: tuple[Item, Part] | None = None
         self.awaiting = False
+        self.popup_done = 0
+        self.popup_correct = 0
         self.last_answer: tuple[Item, Part, bool] | None = None
         self.pending_submit: Item | None = None
         self.failed: list[str] = []
@@ -641,6 +688,16 @@ class SessionScreen(Screen[list[Item]]):
         self.query_one("#feedback", Static).update("")
         self.update_status()
 
+    def load_more(self) -> None:
+        """Popup: pull the next best item into a fresh queue and keep the session going."""
+        items = self.wk.core.pick_popup_reviews(max(1, self.cfg.daemon_popup_items))
+        if not items:
+            self.wk.core.end_session()
+            self.dismiss(self.queue.finished)
+            return
+        self.queue = Queue(items, active_size=len(items), back_to_back=(self.cfg.review_order == "back_to_back"))
+        self.next_prompt()
+
     def flush_submit(self, blocking: bool = False) -> None:
         item = self.pending_submit
         self.pending_submit = None
@@ -664,9 +721,10 @@ class SessionScreen(Screen[list[Item]]):
         extra = "  · wrapping up" if q.wrapping_up else ""
         if self.popup:
             total_due = self.wk.core.due_counts()[0]
+            done_all = self.popup_done + done
             more = f" · {total_due - done} more due" if total_due - done > 0 else ""
             self.query_one("#status", Static).update(
-                f"Quick review {done + 1 if q.remaining else done}/{q.total}{more}   [F2 open full WaniKani · {key('leave')} close]"
+                f"Quick review · {done_all} done{more}   [F2 open full WaniKani · {key('leave')} close]"
             )
             return
         keys = f"[{key('info')} info · {key('undo')} undo · {key('leave')} {'quit' if self.popup else 'wrap up'}]"
@@ -766,10 +824,21 @@ class SessionScreen(Screen[list[Item]]):
 
     def finish(self) -> None:
         self.flush_submit(blocking=True)
-        self.wk.core.end_session()
         if self.popup:
-            self.dismiss(self.queue.finished)
+            self.popup_done += len(self.queue.finished)
+            self.popup_correct += self.queue.correct_count
+            remaining = len(self.wk.core.db.reviews_available())
+
+            def decide(more: bool | None) -> None:
+                if more:
+                    self.load_more()
+                else:
+                    self.wk.core.end_session()
+                    self.dismiss(self.queue.finished)
+
+            self.app.push_screen(OneMoreScreen(self.popup_done, self.popup_correct, remaining), decide)
             return
+        self.wk.core.end_session()
 
         def close(_: None) -> None:
             self.dismiss(self.queue.finished)

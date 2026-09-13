@@ -12,7 +12,7 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from .config import Settings, config_dir, settings, state_dir
+from .config import Settings, config_dir, config_file, settings, state_dir
 from .core import Core
 from .platform import IS_MAC, default_terminal_command, notification_backend
 
@@ -68,8 +68,8 @@ def notify(title: str, body: str, action: bool, timeout_s: int = 120, icon: str 
                             click_command=popup_command(settings()) if action else None)
 
 
-def notification_icon(core: Core) -> str | None:
-    """A PNG of the item the popup would show, in its WaniKani colour, for the notification."""
+def notification_content(core: Core) -> tuple[str | None, str]:
+    """(icon path, description) for the item the popup would show."""
     try:
         from .images import text_image
 
@@ -77,14 +77,23 @@ def notification_icon(core: Core) -> str | None:
         if items:
             s = items[0].subject
             img = text_image(s.characters or s.primary_meaning, s.color, px=96 if s.characters else 28, pad=14)
+            leech = core.db.leech_scores().get(s.id, 0.0)
+            stage = items[0].assignment.srs_stage
+            from .models import SRS_NAMES
+
+            why = "a leech you keep missing" if leech >= 2 else f"{SRS_NAMES.get(stage, '')}".lower()
+            desc = f"Up next: {s.display_chars} · {s.primary_meaning}" + (f" ({why})" if why else "")
+            if mode == "lesson":
+                desc = f"New {s.label.lower()}: {s.display_chars} · {s.primary_meaning}"
         else:
             img = text_image("鰐", "#00aaff", px=96, pad=14)
+            desc = ""
         path = state_dir() / "notification.png"
         img.save(path)
-        return str(path)
+        return str(path), desc
     except Exception as exc:  # noqa: BLE001
-        log.warning("could not render notification icon: %s", exc)
-        return None
+        log.warning("could not render notification content: %s", exc)
+        return None, ""
 
 
 def run(core: Core, once: bool = False) -> int:
@@ -100,8 +109,20 @@ def run(core: Core, once: bool = False) -> int:
         log.warning("clicks on notifications need terminal-notifier (brew install terminal-notifier); using plain notifications")
     last_sync = datetime.min
     last_notify = datetime.min
+    cfg_file = config_file()
+    cfg_mtime = cfg_file.stat().st_mtime if cfg_file.exists() else 0.0
     while True:
         now = datetime.now()
+        mtime = cfg_file.stat().st_mtime if cfg_file.exists() else 0.0
+        if mtime != cfg_mtime:
+            cfg_mtime = mtime
+            try:
+                settings.cache_clear()
+                cfg = core.cfg = settings()
+                log.info("config reloaded (sync every %d min, notify every %d min, quiet %s, popup %s)",
+                         cfg.daemon_sync_minutes, cfg.daemon_interval_minutes, cfg.daemon_quiet_hours, cfg.daemon_popup)
+            except Exception as exc:  # noqa: BLE001
+                log.error("config reload failed, keeping the previous settings: %s", exc)
         if now - last_sync >= timedelta(minutes=cfg.daemon_sync_minutes):
             try:
                 counts = core.sync(light=not core.needs_full_sync(), full=core.needs_full_sync())
@@ -118,7 +139,9 @@ def run(core: Core, once: bool = False) -> int:
                 title, body = f"{reviews} review{'s' if reviews != 1 else ''} waiting", "Open a quick review window?"
             else:
                 title, body = f"{lessons} lesson{'s' if lessons != 1 else ''} available", "Learn one new item?"
-            icon = notification_icon(core)
+            icon, desc = notification_content(core)
+            if desc:
+                body = desc
             if cfg.daemon_popup == "auto":
                 notify(title, "Opening a review window…", action=False, timeout_s=5, icon=icon)
                 open_popup(cfg)

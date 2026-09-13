@@ -1,8 +1,19 @@
 [project]
 name = "wanikani-tui"
 version = "0.1.0"
-description = "Add your description here"
+description = "WaniKani in your terminal: reviews, lessons and kanji images via the kitty graphics protocol, plus a notification daemon"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["wanikani", "japanese", "kanji", "tui", "textual", "srs"]
+classifiers = [
+    "Environment :: Console",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Education",
+]
 authors = [
     { name = "ferjjp", email = "fer.jjp@gmail.com" }
 ]
