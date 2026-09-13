@@ -14,6 +14,31 @@ from .session import Item, Part
 from .sync import SyncCancelled, needs_full_sync, sync
 
 
+def order_by_dependency(items: list[Item]) -> list[Item]:
+    """Within a lesson batch, put components before what they build: radicals before the kanji that use
+    them, kanji before the vocabulary that contains them. Ties keep the original order (stable)."""
+    by_id = {i.subject.id: i for i in items}
+    placed: list[Item] = []
+    done: set[int] = set()
+    visiting: set[int] = set()
+
+    def visit(item: Item) -> None:
+        sid = item.subject.id
+        if sid in done or sid in visiting:
+            return
+        visiting.add(sid)
+        for cid in item.subject.component_ids:
+            if cid in by_id:
+                visit(by_id[cid])
+        visiting.discard(sid)
+        done.add(sid)
+        placed.append(item)
+
+    for item in items:
+        visit(item)
+    return placed
+
+
 class Core:
     def __init__(self, api: WaniKani, db: Database, cfg: Settings | None = None) -> None:
         self.api = api
@@ -98,7 +123,8 @@ class Core:
             items.sort(key=lambda i: (i.subject.level, rnd()))
         else:
             items.sort(key=lambda i: (i.subject.level, TYPE_ORDER.get(i.subject.type, 9), i.subject.data.get("lesson_position", 0)))
-        return items if ids is not None else items[:batch]
+        chosen = items if ids is not None else items[:batch]
+        return order_by_dependency(chosen)
 
     def all_lesson_items(self) -> list[Item]:
         return self.lesson_items(ids=[a["data"]["subject_id"] for a in self.db.lessons_available()])
@@ -106,7 +132,7 @@ class Core:
     def popup_items(self) -> tuple[str, list[Item]]:
         """What a popup window should show: ('review', items) or ('lesson', items) or ('', [])."""
         n = max(1, self.cfg.daemon_popup_items)
-        reviews = self.review_items(limit=n, order="oldest")
+        reviews = self.pick_popup_reviews(n) if self.cfg.popup_pick == "smart" else self.review_items(limit=n, order="oldest")
         lessons = self.lesson_items(batch=1)
         prefer = self.cfg.daemon_prefer
         if prefer == "lessons" and lessons:
@@ -118,6 +144,44 @@ class Core:
         if lessons:
             return "lesson", lessons
         return "", []
+
+    def pick_popup_reviews(self, n: int = 1) -> list[Item]:
+        """Choose the reviews a popup interrupts you with.
+
+        Prefers what you are actually at risk of forgetting: leeches, low SRS stages, items overdue for
+        long, poor accuracy. Skips anything answered in the last hour, and varies types so it is not
+        always vocabulary. Deterministic scoring with a small random jitter to avoid the same item twice.
+        """
+        due = [Assignment.from_raw(a) for a in self.db.reviews_available()]
+        if not due:
+            return []
+        seen = self.db.recently_seen(hours=self.cfg.popup_skip_recent_hours)
+        candidates = [a for a in due if a.subject_id not in seen] or due
+        subs = {s.id: s for s in self.subjects(a.subject_id for a in candidates)}
+        stats = self.db.review_stats_map(subs)
+        leech = self.db.leech_scores()
+        now = now_utc()
+        scored: list[tuple[float, Assignment]] = []
+        for a in candidates:
+            s = subs.get(a.subject_id)
+            if s is None:
+                continue
+            score = 0.0
+            score += 3.0 * min(leech.get(a.subject_id, 0.0), 3.0)            # leeches first
+            score += {1: 2.5, 2: 2.0, 3: 1.5, 4: 1.0, 5: 0.6, 6: 0.4, 7: 0.2, 8: 0.1}.get(a.srs_stage, 0)
+            st = stats.get(a.subject_id)
+            if st:
+                pct = st.get("percentage_correct", 100)
+                score += (100 - pct) / 25.0                                  # 0..4 for poor accuracy
+            if a.available_at:
+                overdue_h = max(0.0, (now - a.available_at).total_seconds() / 3600)
+                score += min(overdue_h / 24.0, 2.0)                          # up to +2 for days overdue
+            score += {"radical": 0.3, "kanji": 0.6}.get(s.type, 0.0)        # kanji gate level-ups
+            score += random.random() * 0.5
+            scored.append((score, a))
+        scored.sort(key=lambda t: -t[0])
+        chosen = [a for _, a in scored[:n]]
+        return [Item.build(subs[a.subject_id], a) for a in chosen]
 
     def due_counts(self) -> tuple[int, int, datetime | None]:
         reviews = len(self.db.reviews_available())
@@ -261,3 +325,21 @@ class Core:
             "level": level, "days_on_level": days_on_level, "median_days": median, "levels_done": len(durations),
             "projected": projected, "total_days": sum(durations),
         }
+
+    # -- export -------------------------------------------------------------------
+
+    def export_csv(self, what: str, path: str | None = None) -> str:
+        import csv
+        import sys
+
+        header, rows = self.db.export_rows(what)
+        if path and path != "-":
+            with open(path, "w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                w.writerow(header)
+                w.writerows(rows)
+            return f"{len(rows)} rows -> {path}"
+        w = csv.writer(sys.stdout)
+        w.writerow(header)
+        w.writerows(rows)
+        return ""

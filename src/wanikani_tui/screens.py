@@ -1006,8 +1006,10 @@ class LessonScreen(Screen[None]):
         self.sub_title = f"{index + 1} / {len(self.items)} · {s.label} {s.display_chars}"
         last = index == len(self.items) - 1
         label = "New item" if self.popup else "Lesson"
+        builds_on = [self.items[j].subject for j in range(index) if self.items[j].subject.id in s.component_ids]
+        hint = ("   builds on " + " ".join(b.display_chars for b in builds_on)) if builds_on else ""
         self.query_one("#nav", Static).update(
-            f"{label} {index + 1}/{len(self.items)}   ←/→ navigate   " + ("→ or Enter: start quiz" if last else "")
+            f"{label} {index + 1}/{len(self.items)}{hint}   ←/→ navigate   " + ("→ or Enter: start quiz" if last else "")
             + ("   [F2 open full WaniKani]" if self.popup else "")
         )
         if s.is_vocab and s.audio_urls and settings().lessons_audio_autoplay:

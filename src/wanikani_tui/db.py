@@ -536,3 +536,66 @@ class Database:
     def study_material_row(self, subject_id: int) -> dict[str, Any] | None:
         row = self.conn.execute("SELECT id,data FROM study_materials WHERE subject_id=?", (subject_id,)).fetchone()
         return {"id": row["id"], "data": json.loads(row["data"])} if row else None
+
+    # -- popup selection support ------------------------------------------------
+
+    def recently_seen(self, hours: float = 1.0) -> set[int]:
+        """Subject ids answered in a session within the last `hours`."""
+        from datetime import timedelta
+
+        since = (now_utc() - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        return {r["subject_id"] for r in self.conn.execute("SELECT subject_id FROM session_items WHERE at >= ?", (since,))}
+
+    def leech_scores(self) -> dict[int, float]:
+        return dict(self.leeches())
+
+    def review_stats_map(self, subject_ids: Iterable[int]) -> dict[int, dict[str, Any]]:
+        ids = list(subject_ids)
+        out: dict[int, dict[str, Any]] = {}
+        for start in range(0, len(ids), 500):
+            chunk = ids[start:start + 500]
+            q = f"SELECT subject_id, data FROM review_statistics WHERE subject_id IN ({','.join('?' * len(chunk))})"
+            for r in self.conn.execute(q, chunk):
+                out[r["subject_id"]] = json.loads(r["data"])
+        return out
+
+    # -- export -------------------------------------------------------------------
+
+    def export_rows(self, what: str) -> tuple[list[str], list[list[Any]]]:
+        """Rows for CSV export: sessions | items | reviews | stats."""
+        if what == "sessions":
+            rows = self.recent_sessions(limit=100000)
+            return (["session_id", "mode", "started_at", "finished_at", "items", "correct"],
+                    [[r["id"], r["mode"], r["started_at"], r["finished_at"], r["items"], r["correct"]] for r in rows])
+        if what == "items":
+            cur = self.conn.execute(
+                "SELECT i.session_id, s.mode, i.at, i.subject_id, i.subject_type, sub.characters, sub.slug, sub.level,"
+                " i.incorrect_meaning, i.incorrect_reading, i.old_stage, i.new_stage"
+                " FROM session_items i JOIN sessions s ON s.id=i.session_id LEFT JOIN subjects sub ON sub.id=i.subject_id ORDER BY i.id"
+            )
+            return ([d[0] for d in cur.description], [list(r) for r in cur.fetchall()])
+        if what == "reviews":
+            cur = self.conn.execute(
+                "SELECT r.id, r.created_at, r.subject_id, sub.type, sub.characters, sub.slug, sub.level,"
+                " r.starting_srs_stage, r.ending_srs_stage, r.incorrect_meaning, r.incorrect_reading"
+                " FROM review_log r LEFT JOIN subjects sub ON sub.id=r.subject_id ORDER BY r.created_at"
+            )
+            return ([d[0] for d in cur.description], [list(r) for r in cur.fetchall()])
+        if what == "stats":
+            header = ["subject_id", "type", "characters", "slug", "level", "srs_stage", "meaning_correct", "meaning_incorrect",
+                      "meaning_max_streak", "meaning_current_streak", "reading_correct", "reading_incorrect",
+                      "reading_max_streak", "reading_current_streak", "percentage_correct", "leech_score"]
+            leech = self.leech_scores()
+            out = []
+            for r in self.conn.execute(
+                "SELECT rs.data AS data, sub.type AS t, sub.characters AS c, sub.slug AS slug, sub.level AS lvl, a.srs_stage AS stage"
+                " FROM review_statistics rs LEFT JOIN subjects sub ON sub.id=rs.subject_id"
+                " LEFT JOIN assignments a ON a.subject_id=rs.subject_id ORDER BY sub.level, sub.lesson_position"
+            ):
+                d = json.loads(r["data"])
+                out.append([d["subject_id"], r["t"], r["c"], r["slug"], r["lvl"], r["stage"],
+                            d.get("meaning_correct"), d.get("meaning_incorrect"), d.get("meaning_max_streak"), d.get("meaning_current_streak"),
+                            d.get("reading_correct"), d.get("reading_incorrect"), d.get("reading_max_streak"), d.get("reading_current_streak"),
+                            d.get("percentage_correct"), round(leech.get(d["subject_id"], 0.0), 2)])
+            return header, out
+        raise ValueError(what)

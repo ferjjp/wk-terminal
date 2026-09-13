@@ -105,6 +105,8 @@ min_due = 1                  # only notify when at least this many reviews are d
 quiet_hours = ["23:00", "08:00"]
 popup = "notify"             # notify (notification with a button) | auto (open the window directly) | none
 popup_items = 1              # reviews per popup window
+popup_pick = "smart"         # smart (leeches, low SRS, overdue, weak accuracy first) | oldest
+popup_skip_recent_hours = 1  # never pop an item answered this recently
 prefer = "reviews"           # reviews | lessons | mixed  (what a popup shows when both are available)
 # terminal = "ghostty --title=WaniKani -e"   # default: detected (ghostty, kitty, wezterm, …; Terminal.app on macOS)
 notify_lessons = false       # also notify when lessons are waiting and nothing is due
@@ -134,6 +136,8 @@ class Settings:
     daemon_quiet_hours: tuple[str, str] | None = ("23:00", "08:00")
     daemon_popup: str = "notify"
     daemon_popup_items: int = 1
+    popup_pick: str = "smart"
+    popup_skip_recent_hours: float = 1.0
     daemon_prefer: str = "reviews"
     daemon_terminal: str = ""  # empty = detect at runtime (see platform.default_terminal_command)
     daemon_notify_lessons: bool = False
@@ -175,6 +179,8 @@ def settings() -> Settings:
     s.daemon_quiet_hours = (str(qh[0]), str(qh[1])) if qh and len(qh) == 2 else None
     s.daemon_popup = str(_get(raw, "daemon", "popup", "notify"))
     s.daemon_popup_items = int(_get(raw, "daemon", "popup_items", 1))
+    s.popup_pick = str(_get(raw, "daemon", "popup_pick", "smart"))
+    s.popup_skip_recent_hours = float(_get(raw, "daemon", "popup_skip_recent_hours", 1))
     s.daemon_prefer = str(_get(raw, "daemon", "prefer", "reviews"))
     s.daemon_terminal = str(_get(raw, "daemon", "terminal", "") or "")
     s.daemon_notify_lessons = bool(_get(raw, "daemon", "notify_lessons", False))

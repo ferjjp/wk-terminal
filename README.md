@@ -42,6 +42,7 @@ wk pop                # one review (or one lesson) in a small window, then exit
 wk daemon             # background sync + desktop notifications (foreground)
 wk daemon install     # run it as a systemd user service, started with your session
 wk daemon status | uninstall
+wk export stats       # CSV: per-item accuracy + leech score (also: sessions, items, reviews; -o file.csv)
 wk config             # write ~/.config/wanikani/config.toml with all defaults
 wk doctor             # what image protocol the terminal negotiates
 wk --images tgp       # force kitty graphics (auto | tgp | sixel | halfcell | unicode | none)
@@ -59,7 +60,9 @@ Reviews: type and press `Enter`; readings convert romaji to kana as you type (`n
 ん). `Ctrl+Z` undoes the last answer until you continue. `F1` shows the item after you
 answered. `Esc` wraps up the current batch, `Esc` again quits. Failed submissions are
 queued and sent on the next sync.
-Lessons: `←`/`→` (or `h`/`l`) navigate, `Enter` on the last page starts the quiz.
+Lessons: `←`/`→` (or `h`/`l`) navigate, `Enter` on the last page starts the quiz. Within
+a batch, radicals come before the kanji that use them and kanji before their vocabulary;
+the footer says what each item builds on.
 
 All keys can be changed under `[keys]` in the config file.
 
@@ -76,8 +79,11 @@ and the daemon's cadence, quiet hours, popup behaviour and terminal command.
 `wk daemon` refreshes assignments every 10 minutes and, when reviews are due, sends a
 desktop notification (over D-Bus, so clicks work on GNOME, KDE, mako, dunst…) at most
 every 30 minutes and not during quiet hours. Clicking the notification, or its
-**Review now** button, opens `wk pop` in a small ghostty window: one review, oldest due
-first, or one new item when nothing is due. Inside that window `F2` opens the full
+**Review now** button, opens `wk pop` in a small ghostty window with one review, or one
+new item when nothing is due. The review is chosen to be the one you most need: leeches,
+low SRS stages, long-overdue and weak-accuracy items score highest, kanji slightly above
+vocabulary, and anything you answered in the last hour is skipped
+(`popup_pick = "oldest"` restores plain oldest-first). Inside that window `F2` opens the full
 interface in place. With `popup = "auto"` the window opens without asking; with
 `popup = "none"` you only get the notification. `notify_lessons = true` also nudges when
 lessons are waiting.

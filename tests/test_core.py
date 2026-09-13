@@ -74,3 +74,48 @@ def test_sync_extras_and_stats():
     core.submit_review(core.review_items()[0])
     core.end_session()
     assert db.recent_sessions()[0]["items"] == 1
+
+
+def test_dependency_order():
+    from wanikani_tui.core import order_by_dependency
+
+    core, api, db = make()
+    # vocabulary 水(20) uses kanji 水(10) which uses radicals 1 and 3; feed them reversed
+    items = [core.subject(i) for i in (20, 10, 3, 1, 22)]
+    from wanikani_tui.models import Assignment
+    from wanikani_tui.session import Item
+    fake = [Item.build(s, Assignment(0, {"subject_id": s.id, "srs_stage": 0})) for s in items]
+    ordered = [i.subject.id for i in order_by_dependency(fake)]
+    assert ordered.index(1) < ordered.index(10) < ordered.index(20)
+    assert ordered.index(3) < ordered.index(10)
+    assert len(ordered) == 5 and 22 in ordered
+
+
+def test_smart_popup_prefers_weak_items_and_skips_recent():
+    core, api, db = make()
+    # subject 10 has 3 reading misses and a leech score; it should win over the others
+    picked = core.pick_popup_reviews(1)
+    assert picked[0].subject.id == 10
+    # after answering it in a session, it is skipped
+    core.begin_session("review")
+    db.record_session_item(core.session_id, 10, "kanji", 0, 0, 3, 4)
+    picked = core.pick_popup_reviews(1)
+    assert picked[0].subject.id != 10
+    # when everything was seen recently, still returns something
+    for sid in (1, 2, 20):
+        db.record_session_item(core.session_id, sid, "x", 0, 0, 1, 2)
+    assert core.pick_popup_reviews(1)
+
+
+def test_export(tmp_path):
+    core, api, db = make()
+    core.sync(full=True)
+    core.begin_session("review")
+    core.submit_review(core.review_items()[0])
+    core.end_session()
+    for what in ("sessions", "items", "reviews", "stats"):
+        out = tmp_path / f"{what}.csv"
+        msg = core.export_csv(what, str(out))
+        assert out.exists() and "rows" in msg, msg
+        lines = out.read_text().splitlines()
+        assert len(lines) >= 2, what

@@ -28,6 +28,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_d.add_argument("action", nargs="?", default="run", choices=["run", "install", "uninstall", "status"])
     p_d.add_argument("--once", action="store_true", help="one cycle, then exit (for testing)")
     sub.add_parser("config", help="create the config file with defaults and print its path")
+    p_x = sub.add_parser("export", help="CSV export of your history")
+    p_x.add_argument("what", choices=["sessions", "items", "reviews", "stats"],
+                     help="sessions: one row per session · items: every answer you gave · reviews: WaniKani's review log · stats: per-item accuracy + leech score")
+    p_x.add_argument("-o", "--output", default="-", help="file path (default: stdout)")
     return parser
 
 
@@ -88,6 +92,11 @@ def main(argv: list[str] | None = None) -> int:
                     print("鰐 0" + (f" ({next_at.astimezone().strftime('%H:%M')})" if next_at else ""))
             else:
                 print(f"{reviews} reviews, {lessons} lessons" + (f"; next review {next_at.astimezone().strftime('%a %H:%M')}" if next_at and not reviews else ""))
+            return 0
+        if command == "export":
+            msg = core.export_csv(args.what, args.output)
+            if msg:
+                print(msg)
             return 0
         if command == "daemon":
             from . import daemon
