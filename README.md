@@ -1,4 +1,4 @@
-# wanikani-tui
+# wk-terminal
 
 WaniKani in your terminal: dashboard, item browser, reviews and lessons, with kanji and
 radical images drawn through the kitty graphics protocol (ghostty, kitty, WezTerm…),
