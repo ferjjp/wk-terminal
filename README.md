@@ -52,21 +52,83 @@ wk --images tgp       # force kitty graphics (auto | tgp | sixel | halfcell | un
 
 ## Keys
 
-Dashboard: `r` reviews, `l` lessons, `L` pick lessons, `b` browse, `e` leeches, `t` stats,
-`s` sync, `q` quit.
-Browse: `/` search, `t` type filter, `f` cycle filter (all, due in 24 h, leeches, SRS group),
-`Enter` open.
-Item: `a` audio, `s` stroke order (kanji), `y` add synonym, `n` note, `g` related, `o` open
-on wanikani.com, `Tab` moves between related-item chips, `Enter` opens one.
-Reviews: type and press `Enter`; readings convert romaji to kana as you type (`nn` gives
-ん). `Ctrl+Z` undoes the last answer until you continue. `F1` shows the item after you
-answered. `Esc` wraps up the current batch, `Esc` again quits. Failed submissions are
-queued and sent on the next sync.
-Lessons: `←`/`→` (or `h`/`l`) navigate, `Enter` on the last page starts the quiz. Within
-a batch, radicals come before the kanji that use them and kanji before their vocabulary;
-the footer says what each item builds on.
+Every key below can be changed under `[keys]` in the config file.
 
-All keys can be changed under `[keys]` in the config file.
+### Dashboard
+
+| Key | Action |
+|---|---|
+| `r` | Start reviews |
+| `l` | Start lessons (next batch) |
+| `L` | Pick which lessons to take |
+| `b` | Browse items by level |
+| `e` | Your leeches |
+| `t` | Stats |
+| `s` | Sync now |
+| `q` | Quit |
+
+### Browse
+
+| Key | Action |
+|---|---|
+| `↑` `↓` | Move through the list |
+| `←` `→` | Change level (in the level column) |
+| `Enter` | Open the item |
+| `/` | Search characters, meaning or slug |
+| `t` | Cycle type: all, radicals, kanji, vocabulary |
+| `f` | Cycle filter: all, due in 24 h, leeches, apprentice … burned |
+| `Esc` | Back |
+
+### Item
+
+| Key | Action |
+|---|---|
+| `a` | Play audio (vocabulary) |
+| `s` | Stroke order (kanji) |
+| `y` | Add a meaning synonym to your account |
+| `n` | Edit your note |
+| `g` | Jump to a related item from a list |
+| `Tab` / `Enter` | Move between related-item chips and open one |
+| `o` | Open on wanikani.com |
+| `j` `k` | Scroll (vim keys, on by default) |
+| `Esc` | Back |
+
+### Reviews
+
+Type the answer and press `Enter`. Readings convert romaji to kana as you type:
+`nn` or `n'` gives ん, so 女 is `onnna` and 単位 is `tanni`.
+
+| Key | Action |
+|---|---|
+| `Enter` | Check the answer, then continue |
+| `Ctrl+Z` | Undo the last answer (until you continue) |
+| `F1` | Item details, after you answered |
+| `Esc` | Wrap up: finish the items already started, then quit. Press again to quit now |
+| `F2` | In the popup window: open the full app in place |
+
+A submission that fails to reach WaniKani is queued and sent on the next sync.
+
+### Lessons
+
+| Key | Action |
+|---|---|
+| `→` `←` (or `l` `h`) | Next / previous item |
+| `Enter` | On the last item: start the quiz |
+| `a` | Play audio |
+| `s` | Stroke order |
+| `Esc` | Leave lessons (nothing is recorded until the quiz) |
+
+Within a batch, radicals come before the kanji that use them and kanji before their
+vocabulary; the footer says what each item builds on.
+
+### Lesson picker
+
+| Key | Action |
+|---|---|
+| `Space` | Select or deselect |
+| `a` | Select all / none |
+| `t` | Cycle type filter |
+| `Enter` | Start with the selection (or the highlighted item) |
 
 ## Config
 
