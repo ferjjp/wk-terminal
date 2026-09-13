@@ -72,7 +72,7 @@ Every key below can be changed under `[keys]` in the config file.
 | Key | Action |
 |---|---|
 | `↑` `↓` | Move through the list |
-| `←` `→` | Change level (in the level column) |
+| `Tab` | Switch between the level column and the list |
 | `Enter` | Open the item |
 | `/` | Search characters, meaning or slug |
 | `t` | Cycle type: all, radicals, kanji, vocabulary |
@@ -140,27 +140,21 @@ and the daemon's cadence, quiet hours, popup behaviour and terminal command.
 
 ## Daemon
 
-`wk daemon` refreshes assignments every 10 minutes and, when reviews are due, sends a
-desktop notification (over D-Bus, so clicks work on GNOME, KDE, mako, dunst…) at most
-every 30 minutes and not during quiet hours. Clicking the notification, or its
-**Review now** button, opens `wk pop` in a small ghostty window with one review, or one
-new item when nothing is due. The review is chosen to be the one you most need: leeches,
-low SRS stages, long-overdue and weak-accuracy items score highest, kanji slightly above
-vocabulary, and anything you answered in the last hour is skipped
-(`popup_pick = "oldest"` restores plain oldest-first). Inside that window `F2` opens the full
-interface in place. When you finish, a prompt offers one more (`Enter`), close (`Esc`) or the full app (`F2`).
-With `popup = "auto"` the window opens without asking; with
-`popup = "none"` you only get the notification. `notify_lessons = true` also nudges when
-lessons are waiting.
+`wk daemon` syncs every 10 minutes and, when reviews are due, sends a desktop
+notification showing the next item. Clicking it opens a small terminal window with that
+one review; when you finish, press `Enter` for one more, `Esc` to close, or `F2` for
+the full app. Notifications come at most every 30 minutes and never during quiet hours
+(23:00 to 08:00). The item is chosen to be the one you most need: leeches, low SRS
+stages, long-overdue and weak items first, skipping anything answered in the last hour.
 
 ```sh
 wk daemon --once        # try one cycle in the foreground
-wk daemon install       # ~/.config/systemd/user/wanikani-tui.service, enabled and started
-journalctl --user -u wanikani-tui -f
+wk daemon install       # start it with your session (systemd user service / launchd agent)
+wk daemon status
 ```
 
-The popup command is configurable (`terminal = ...`), so any terminal that can run a
-command in a new window works. The daemon reloads `config.toml` whenever it changes.
+Cadence, quiet hours, popup behaviour and the terminal command live under `[daemon]`
+in the config file; the daemon picks up changes without a restart.
 
 ## macOS
 
