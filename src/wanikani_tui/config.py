@@ -97,6 +97,8 @@ theme = "textual-dark"       # any Textual theme: textual-dark, textual-light, t
 colorblind = false           # Okabe-Ito palette for SRS stages
 vim_keys = true              # j/k scroll, h/l navigate lessons
 compact = "auto"             # auto | true | false  (small panes: shorter image, tighter layout)
+katakana_onyomi = false      # show on'yomi in katakana (dictionary convention)
+community_data = true        # fetch Keisei/Niai datasets (GPL-3) from GitHub on first use for the item screen
 
 [daemon]
 sync_minutes = 10            # how often the daemon refreshes assignments
@@ -112,7 +114,17 @@ prefer = "reviews"           # reviews | lessons | mixed  (what a popup shows wh
 notify_lessons = false       # also notify when lessons are waiting and nothing is due
 
 [keys]
-# Override keys by action name, e.g.  reviews = "R"   back = "q"
+# Any action can be rebound; `wk keys` lists them all with their current key.
+# Key names: letters as-is (case matters: "L" is shift+l), "slash", "plus", "minus", "space",
+# "enter", "escape", "f1".."f12", "ctrl+z", "ctrl+shift+x", "up"/"down"/"left"/"right".
+# reviews = "r"          lessons = "l"        pick_lessons = "L"     browse = "b"
+# leeches = "e"          study = "x"          stats = "t"            sync = "s"        quit = "q"
+# back = "escape"        search = "slash"     type_filter = "t"      filter = "f"
+# related = "g"          open = "o"           audio = "a"            strokes = "s"
+# synonym = "y"          note = "n"           info = "f1"            undo = "ctrl+z"
+# mark_correct = "plus"  mark_incorrect = "minus"                    leave = "escape"
+# full_app = "f2"        next = "right"       prev = "left"          select = "space"  select_all = "a"
+# scroll_down = "j"      scroll_up = "k"
 """
 
 
@@ -130,6 +142,8 @@ class Settings:
     ui_colorblind: bool = False
     ui_vim_keys: bool = True
     ui_compact: str = "auto"
+    ui_katakana_onyomi: bool = False
+    ui_community_data: bool = True
     daemon_sync_minutes: int = 10
     daemon_interval_minutes: int = 30
     daemon_min_due: int = 1
@@ -172,6 +186,8 @@ def settings() -> Settings:
     s.ui_vim_keys = bool(_get(raw, "ui", "vim_keys", True))
     compact = _get(raw, "ui", "compact", "auto")
     s.ui_compact = "true" if compact is True else "false" if compact is False else str(compact)
+    s.ui_katakana_onyomi = bool(_get(raw, "ui", "katakana_onyomi", False))
+    s.ui_community_data = bool(_get(raw, "ui", "community_data", True))
     s.daemon_sync_minutes = int(_get(raw, "daemon", "sync_minutes", 10))
     s.daemon_interval_minutes = int(_get(raw, "daemon", "interval_minutes", 30))
     s.daemon_min_due = int(_get(raw, "daemon", "min_due", 1))

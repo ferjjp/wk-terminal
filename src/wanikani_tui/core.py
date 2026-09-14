@@ -183,6 +183,61 @@ class Core:
         chosen = [a for _, a in scored[:n]]
         return [Item.build(subs[a.subject_id], a) for a in chosen]
 
+    # -- self-study (never touches the SRS) --------------------------------------------
+
+    def study_items(self, subjects: list[Subject]) -> list[Item]:
+        asg = self.db.assignments_for(s.id for s in subjects)
+        items = []
+        for s in subjects:
+            raw = asg.get(s.id)
+            a = Assignment.from_raw(raw) if raw else Assignment(0, {"subject_id": s.id, "srs_stage": 0})
+            items.append(Item.build(s, a))
+        random.shuffle(items)
+        return items
+
+    def study_sets(self) -> list[tuple[str, str, int]]:
+        """(id, label, count) presets for the self-study picker."""
+        level = self.user().get("level", 1)
+        sets = []
+        lvl_kanji = self.db.subjects_at_level(level, ("kanji",))
+        lvl_all = self.db.subjects_at_level(level)
+        sets.append(("level_kanji", f"Level {level} kanji", len(lvl_kanji)))
+        sets.append(("level_all", f"Level {level} everything", len(lvl_all)))
+        sets.append(("leeches", "Leeches", len(self.db.leeches())))
+        sets.append(("mistakes", "Recent mistakes (24 h)", len(self.db.recent_mistakes())))
+        sets.append(("apprentice", "Apprentice items", len(self.db.subjects_filtered("apprentice", limit=100000))))
+        sets.append(("due", "Due in the next 24 h", len(self.db.subjects_filtered("due", limit=100000))))
+        sets.append(("random", "20 random learned items", min(20, len(self.db.all_assignments()))))
+        sets.append(("burned", "20 random burned items", 20))
+        return sets
+
+    def study_set_items(self, set_id: str) -> list[Item]:
+        level = self.user().get("level", 1)
+        if set_id == "level_kanji":
+            subs = self.subjects_at_level(level, ("kanji",))
+        elif set_id == "level_all":
+            subs = self.subjects_at_level(level)
+        elif set_id == "leeches":
+            subs = self.subjects_filtered("leech")
+        elif set_id == "mistakes":
+            subs = self.subjects(self.db.recent_mistakes())
+        elif set_id == "apprentice":
+            subs = self.subjects_filtered("apprentice")
+        elif set_id == "due":
+            subs = self.subjects_filtered("due")
+        elif set_id == "random":
+            subs = self.subjects(self.db.random_learned(20, burned=None))
+        elif set_id == "burned":
+            subs = self.subjects(self.db.random_learned(20, burned=True))
+        else:
+            subs = []
+        return self.study_items(subs)
+
+    def record_study(self, item: Item) -> None:
+        if self.session_id is not None:
+            self.db.record_session_item(self.session_id, item.subject.id, item.subject.type,
+                                        item.wrong[Part.MEANING], item.wrong[Part.READING], None, None)
+
     def due_counts(self) -> tuple[int, int, datetime | None]:
         reviews = len(self.db.reviews_available())
         lessons = len(self.db.lessons_available())

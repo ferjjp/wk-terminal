@@ -286,6 +286,45 @@ class Database:
                 out.append(ts)
         return out
 
+    def upcoming_reviews_by_stage(self, after: datetime | None = None, hours: int = 24) -> list[tuple[datetime, int]]:
+        after = after or now_utc()
+        rows = self.conn.execute(
+            "SELECT available_at, srs_stage FROM assignments WHERE hidden=0 AND started_at IS NOT NULL AND burned_at IS NULL"
+            " AND available_at > ? ORDER BY available_at",
+            (after.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),),
+        ).fetchall()
+        out = []
+        for r in rows:
+            ts = parse_ts(r["available_at"])
+            if ts and (ts - after).total_seconds() <= hours * 3600:
+                out.append((ts, r["srs_stage"]))
+        return out
+
+    def recent_mistakes(self, hours: int = 24) -> list[int]:
+        """Subject ids answered wrong recently (local sessions plus the synced review log)."""
+        from datetime import timedelta
+
+        since = (now_utc() - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        ids: dict[int, None] = {}
+        for r in self.conn.execute(
+            "SELECT subject_id FROM session_items WHERE at >= ? AND incorrect_meaning+incorrect_reading > 0 ORDER BY at DESC", (since,)
+        ):
+            ids.setdefault(r["subject_id"], None)
+        for r in self.conn.execute(
+            "SELECT subject_id FROM review_log WHERE created_at >= ? AND incorrect_meaning+incorrect_reading > 0 ORDER BY created_at DESC", (since,)
+        ):
+            ids.setdefault(r["subject_id"], None)
+        return list(ids)
+
+    def random_learned(self, n: int = 20, burned: bool | None = None) -> list[int]:
+        where = "hidden=0 AND started_at IS NOT NULL"
+        if burned is True:
+            where += " AND burned_at IS NOT NULL"
+        elif burned is False:
+            where += " AND burned_at IS NULL"
+        rows = self.conn.execute(f"SELECT subject_id FROM assignments WHERE {where} ORDER BY RANDOM() LIMIT ?", (n,)).fetchall()
+        return [r["subject_id"] for r in rows]
+
     def lessons_available(self) -> list[dict[str, Any]]:
         rows = self.conn.execute(
             "SELECT id,data FROM assignments WHERE hidden=0 AND unlocked_at IS NOT NULL AND started_at IS NULL"

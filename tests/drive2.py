@@ -93,7 +93,8 @@ async def main() -> None:
             item, part = app2.screen.current
             ans = item.subject.primary_meaning if part is Part.MEANING else item.subject.accepted_readings[0]
             await pilot.press(*list(ans), "enter"); await pilot.pause(); await pilot.press("enter"); await pilot.pause(0.5)
-        print("popup exited:", not app2.is_running, "| submitted:", api.submitted[-1:])
+        await pilot.press("escape"); await pilot.pause(0.5)  # close the one-more prompt
+    print("popup exited:", not app2.is_running, "| submitted:", api.submitted[-1:])
 
 
 asyncio.run(main())

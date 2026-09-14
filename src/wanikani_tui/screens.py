@@ -19,7 +19,7 @@ from .answers import Verdict, check_meaning, check_reading, to_kana_live
 from .config import settings
 from .db import parse_ts
 from .keys import key
-from .models import SRS_NAMES, Subject, next_srs_stage, srs_color
+from .models import SRS_NAMES, Subject, fmt_reading, next_srs_stage, srs_color
 from .session import Item, Part, Queue
 from .widgets import CharDisplay, Chip, ImageWidget, mnemonic_text, type_badge
 
@@ -92,8 +92,8 @@ class SubjectDetail(VerticalScroll):
     SubjectDetail #meta { padding: 0 2; height: auto; width: 1fr; }
     """
     BINDINGS = [
-        Binding("j", "scroll_down", "Down", show=False),
-        Binding("k", "scroll_up", "Up", show=False),
+        Binding(key("scroll_down"), "scroll_down", "Down", show=False),
+        Binding(key("scroll_up"), "scroll_up", "Up", show=False),
     ] if _vim() else []
 
     def __init__(self, subject: Subject, **kw: Any) -> None:
@@ -129,7 +129,7 @@ class SubjectDetail(VerticalScroll):
             nan = s.readings_of_type("nanori")
             prim = s.primary_reading_type
             meta.append("\nOn'yomi: ", style="bold" if prim == "onyomi" else "dim")
-            meta.append(", ".join(on_) or "—", style="bold" if prim == "onyomi" else "dim")
+            meta.append(", ".join(fmt_reading(r, "onyomi") for r in on_) or "—", style="bold" if prim == "onyomi" else "dim")
             meta.append("   Kun'yomi: ", style="bold" if prim == "kunyomi" else "dim")
             meta.append(", ".join(kun) or "—", style="bold" if prim == "kunyomi" else "dim")
             if nan:
@@ -204,10 +204,148 @@ class SubjectDetail(VerticalScroll):
                 body.append(cs.get("ja", ""), style="bold")
                 body.append("\n" + cs.get("en", ""), style="dim")
             yield Section("Context sentences", body)
+        if s.is_kanji and s.characters and settings().ui_community_data:
+            yield KeiseiSection(s)
+            yield NiaiSection(s)
 
     def related(self) -> list[Subject]:
         s = self.subject
         return self.wk.core.subjects(s.component_ids + s.similar_ids + s.amalgamation_ids)
+
+
+class ExtSection(Vertical):
+    """A section fed by a community dataset that may need downloading first; fills itself in a worker."""
+
+    DEFAULT_CSS = """
+    ExtSection { border: round $secondary; padding: 0 1; margin: 0 0 1 0; height: auto; }
+    ExtSection ItemGrid { height: auto; }
+    ExtSection .ext-note { color: $text-muted; }
+    """
+    TITLE = ""
+
+    def __init__(self, subject: Subject, **kw: Any) -> None:
+        super().__init__(**kw)
+        self.subject = subject
+        self.border_title = self.TITLE
+
+    def compose(self) -> ComposeResult:
+        yield Static(Text("loading…", style="dim"), id="body")
+
+    def on_mount(self) -> None:
+        self._load()
+
+    @work(thread=True)
+    def _load(self) -> None:
+        app: WKApp = self.app  # type: ignore[assignment]
+        try:
+            result = self.build(app)
+        except Exception as exc:  # noqa: BLE001
+            result = None
+            self.app.call_from_thread(self._set_note, f"unavailable ({exc})")
+            return
+        self.app.call_from_thread(self._fill, result)
+
+    def _set_note(self, text: str) -> None:
+        self.query_one("#body", Static).update(Text(text, style="dim"))
+
+    def build(self, app: "WKApp"):  # pragma: no cover - overridden
+        raise NotImplementedError
+
+    def _fill(self, result) -> None:  # pragma: no cover - overridden
+        raise NotImplementedError
+
+
+class KeiseiSection(ExtSection):
+    TITLE = "Composition · Keisei"
+
+    def build(self, app: "WKApp"):
+        from . import extdata
+
+        return extdata.keisei_info(self.subject.characters or "", app.core.fetch_bytes)
+
+    def _fill(self, info) -> None:
+        core = self.app.core  # type: ignore[attr-defined]
+        if not info:
+            self.remove()
+            return
+        body = Text()
+        body.append(info.get("type_label", ""), style="bold")
+        if info.get("phonetic"):
+            q = info.get("quality", "")
+            body.append(f"   {q} ", style="bold white on #555555")
+            body.append({"天": "all readings follow the mark", "上": "mostly follows the mark",
+                         "中": "sometimes follows the mark", "下": "reading unrelated to the mark"}.get(q, ""), style="dim")
+            body.append("\n\nphonetic mark ", style="dim")
+            body.append(f" {info['phonetic']} ", style="bold white on #ff00aa")
+            body.append(" read " + ", ".join(fmt_reading(r, "onyomi") for r in info.get("mark_readings", [])), style="bold")
+            if info.get("mark_wk_radical"):
+                body.append(f"  (WaniKani radical “{info['mark_wk_radical']}”)", style="dim")
+            if info.get("semantic"):
+                body.append(f"   ·   meaning part {info['semantic']}", style="dim")
+            body.append("\nthis kanji: " + ", ".join(fmt_reading(r, "onyomi") for r in info.get("readings", [])))
+        elif info.get("readings"):
+            body.append("   readings " + ", ".join(fmt_reading(r, "onyomi") for r in info["readings"]), style="dim")
+        if info.get("comment"):
+            body.append("\n" + info["comment"], style="italic dim")
+        self.query_one("#body", Static).update(body)
+
+        def chips_for(chars: list[str], title: str) -> None:
+            subs = [x for x in (core.db.search_subjects(c, limit=3) for c in chars) for x in x if x["object"] == "kanji"]
+            seen: set[int] = set()
+            uniq = []
+            for raw in subs:
+                if raw["id"] not in seen and raw["data"].get("characters") in chars:
+                    seen.add(raw["id"])
+                    uniq.append(Subject.from_raw(raw))
+            missing = [c for c in chars if c not in {u.characters for u in uniq}]
+            if uniq:
+                self.mount(Static(Text(title, style="bold")))
+                grid = ItemGrid(min_column_width=24)
+                self.mount(grid)
+                grid.mount_all([Chip(u, fetch=core.fetch_bytes) for u in uniq])
+            if missing:
+                self.mount(Static(Text(("also, outside WaniKani: " if uniq else title + " (outside WaniKani): ") + " ".join(missing), style="dim"), classes="ext-note"))
+
+        if info.get("compounds"):
+            chips_for(info["compounds"], "Same mark, same reading")
+        if info.get("non_compounds"):
+            chips_for(info["non_compounds"], "Looks like it, but read differently")
+        mark = info.get("as_mark")
+        if mark and mark.get("compounds"):
+            self.mount(Static(Text(f"This kanji is itself a phonetic mark read {', '.join(fmt_reading(r, 'onyomi') for r in mark['readings'])}", style="bold")))
+            chips_for(mark["compounds"], "Kanji that borrow its reading")
+        self.mount(Static(Text(f"{__import__('wanikani_tui.extdata', fromlist=['ATTRIBUTION']).ATTRIBUTION}", style="dim"), classes="ext-note"))
+
+
+class NiaiSection(ExtSection):
+    TITLE = "More look-alikes · Niai"
+
+    def build(self, app: "WKApp"):
+        from . import extdata
+
+        sims = extdata.niai_similar(self.subject.characters or "", app.core.fetch_bytes)
+        if sims is None:
+            return None
+        own = {x.characters for x in app.core.subjects(self.subject.similar_ids)}
+        out = []
+        for ch, score in sims:
+            if ch in own:
+                continue
+            for raw in app.core.db.search_subjects(ch, limit=3):
+                if raw["object"] == "kanji" and raw["data"].get("characters") == ch:
+                    out.append((Subject.from_raw(raw), score))
+                    break
+        return out[:12]
+
+    def _fill(self, result) -> None:
+        if not result:
+            self.remove()
+            return
+        self.query_one("#body", Static).update(Text("Beyond WaniKani's own list, by visual similarity", style="dim"))
+        grid = ItemGrid(min_column_width=24)
+        self.mount(grid)
+        core = self.app.core  # type: ignore[attr-defined]
+        grid.mount_all([Chip(sub, fetch=core.fetch_bytes) for sub, _ in result])
 
 
 class RelatedPicker(ModalScreen[int | None]):
@@ -407,6 +545,7 @@ class BrowseScreen(Screen[None]):
         Binding(key("search"), "search", "Search"),
         Binding(key("type_filter"), "cycle_type", "Type"),
         Binding(key("filter"), "cycle_filter", "Filter"),
+        Binding(key("study"), "study", "Study these"),
     ]
     TYPE_FILTERS = [None, ("radical",), ("kanji",), ("vocabulary", "kana_vocabulary")]
     FILTERS = ["all", "due", "leech", "apprentice", "guru", "master", "enlightened", "burned"]
@@ -483,7 +622,7 @@ class BrowseScreen(Screen[None]):
             else:
                 srs = Text("Locked", style="dim")
                 nxt = ""
-            reading = ", ".join(s.primary_readings) if s.has_reading else ""
+            reading = ", ".join(fmt_reading(r, s.primary_reading_type) for r in s.primary_readings) if s.has_reading else ""
             table.add_row(type_badge(s), Text(s.display_chars, style="bold"), s.primary_meaning, reading, srs, nxt, key=str(s.id))
             self.rows[str(s.id)] = s
 
@@ -492,6 +631,14 @@ class BrowseScreen(Screen[None]):
         k = event.row_key.value
         if k and k in self.rows:
             self.app.push_screen(SubjectScreen(self.rows[k]))
+
+    def action_study(self) -> None:
+        subs = list(self.rows.values())
+        if not subs:
+            self.notify("Nothing to study here")
+            return
+        items = self.wk.core.study_items(subs[:200])
+        self.app.push_screen(SessionScreen("study", items))
 
     def action_search(self) -> None:
         box = self.query_one("#search", Input)
@@ -597,6 +744,7 @@ class SessionScreen(Screen[list[Item]]):
     SessionScreen #prompt.meaning { background: #eeeeee; color: #222222; }
     SessionScreen #prompt.reading { background: #333333; color: #ffffff; }
     SessionScreen #answer { width: 100%; }
+    SessionScreen #answer:disabled { opacity: 1.0; }
     SessionScreen #answer.correct { background: #1f7a3c 40%; border: tall #2fbf5f; }
     SessionScreen #answer.incorrect { background: #8a1c1c 40%; border: tall #e04040; }
     SessionScreen #feedback { width: 100%; height: auto; min-height: 3; padding: 1 2; content-align: center top; }
@@ -610,7 +758,10 @@ class SessionScreen(Screen[list[Item]]):
         Binding(key("leave"), "leave", "Wrap up / quit"),
         Binding(key("info"), "info", "Info"),
         Binding(key("undo"), "undo", "Undo"),
-        Binding("f2", "full_app", "Open full WaniKani"),
+        Binding(key("mark_correct"), "mark_correct", "Accept", show=False, priority=True),
+        Binding(key("mark_incorrect"), "mark_incorrect", "Reject", show=False, priority=True),
+        Binding("enter", "continue", "Continue", show=False),
+        Binding(key("full_app"), "full_app", "Open full WaniKani"),
         Binding(key("audio").replace("a", "ctrl+a") if key("audio") == "a" else key("audio"), "audio", "Audio", show=False),
     ]
 
@@ -647,7 +798,9 @@ class SessionScreen(Screen[list[Item]]):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.title = "Reviews" if self.mode == "review" else "Lesson quiz"
+        self.title = {"review": "Reviews", "lesson": "Lesson quiz", "study": "Self-study"}[self.mode]
+        if self.mode == "study":
+            self.sub_title = "practice only · nothing is sent to WaniKani"
         self.wk.core.begin_session(self.mode)
         self.apply_compact()
         self.next_prompt()
@@ -682,6 +835,7 @@ class SessionScreen(Screen[list[Item]]):
         prompt.update(Text(f"{s.label}  {part.value.title()}", style="bold"))
         box = self.query_one("#answer", Input)
         box.remove_class("correct", "incorrect")
+        box.disabled = False
         box.value = ""
         box.placeholder = "Your response" if part is Part.MEANING else "答え"
         box.focus()
@@ -755,31 +909,41 @@ class SessionScreen(Screen[list[Item]]):
         if result.verdict is Verdict.RETRY:
             fb.update(Text(result.message, style="bold yellow"))
             return
-        correct = result.verdict is Verdict.CORRECT
+        self._apply_verdict(item, part, result.verdict is Verdict.CORRECT, typed, result)
+
+    def _apply_verdict(self, item: Item, part: Part, correct: bool, typed: str, result=None, override: bool = False) -> None:
+        s = item.subject
+        fb = self.query_one("#feedback", Static)
+        box = self.query_one("#answer", Input)
         completed = self.queue.mark(item, part, correct)
         self.last_answer = (item, part, correct)
+        box.remove_class("correct", "incorrect")
         box.add_class("correct" if correct else "incorrect")
+        box.disabled = True  # keys now go to the screen: Enter continues, +/- override, ctrl+z undoes
         msg = Text()
+        rtype = s.primary_reading_type if s.is_kanji else None
         if correct:
             msg.append("Correct", style="bold green")
-            if not result.exact:
+            if override:
+                msg.append("  ·  accepted by you", style="yellow")
+            elif result is not None and not result.exact:
                 msg.append(f"  ·  {result.message}", style="yellow")
             if part is Part.MEANING and len(s.accepted_meanings) > 1:
                 msg.append("\n" + ", ".join(s.accepted_meanings[:6]), style="dim")
             elif part is Part.READING and len(s.accepted_readings) > 1:
-                msg.append("\n" + ", ".join(s.accepted_readings), style="dim")
+                msg.append("\n" + ", ".join(fmt_reading(r, rtype) for r in s.accepted_readings), style="dim")
             if part is Part.READING and s.is_vocab and s.audio_urls and self.cfg.review_audio_autoplay:
                 self.wk.play_audio(s)
         else:
             msg.append("Incorrect", style="bold red")
+            if override:
+                msg.append("  ·  rejected by you", style="yellow")
             msg.append(f"   you typed: {typed.strip()}", style="dim")
             if part is Part.MEANING:
                 msg.append("\nAccepted: " + ", ".join(s.accepted_meanings[:6]), style="bold")
             else:
-                want = ""
-                if s.is_kanji and s.primary_reading_type:
-                    want = f" ({s.primary_reading_type.replace('yomi', "'yomi")})"
-                msg.append("\nAccepted: " + ", ".join(s.accepted_readings) + want, style="bold")
+                want = f" ({rtype.replace('yomi', "'yomi")})" if rtype else ""
+                msg.append("\nAccepted: " + ", ".join(fmt_reading(r, rtype) for r in s.accepted_readings) + want, style="bold")
             if self.cfg.review_show_mnemonic_on_miss:
                 mn = s.meaning_mnemonic if part is Part.MEANING else s.reading_mnemonic
                 if mn:
@@ -793,13 +957,41 @@ class SessionScreen(Screen[list[Item]]):
                 new_stage = next_srs_stage(item.assignment.srs_stage, item.incorrect)
                 msg.append("\n")
                 msg.append(f" {SRS_NAMES[new_stage]} ", style=f"bold white on {srs_color(new_stage)}")
-            self.pending_submit = item  # sent when you continue, so undo stays possible until then
-        msg.append(f"\n\nEnter to continue · {key('info')} details · {key('undo')} undo", style="dim")
+            if self.mode == "study":
+                self.wk.core.record_study(item)
+            else:
+                self.pending_submit = item  # sent when you continue, so undo stays possible until then
+        else:
+            self.pending_submit = None
+        msg.append(f"\n\nEnter to continue · {key('info')} details · {key('undo')} undo · {key('mark_correct')} accept / {key('mark_incorrect')} reject", style="dim")
         fb.update(msg)
         self.awaiting = True
+        self.last_typed = typed
         self.update_status()
-        if correct and self.cfg.review_lightning:
+        if correct and self.cfg.review_lightning and not override:
             self.set_timer(0.5, self._lightning_advance)
+
+    def action_continue(self) -> None:
+        if self.awaiting:
+            self.next_prompt()
+
+    def _override(self, correct: bool) -> None:
+        """Double-Check style: flip the last verdict. Reverses the mark, then re-applies it the other way."""
+        if not self.awaiting or not self.last_answer:
+            return
+        item, part, was_correct = self.last_answer
+        if was_correct == correct:
+            self.notify("Already marked that way")
+            return
+        self.queue.unmark(item, part, was_correct)
+        self.pending_submit = None
+        self._apply_verdict(item, part, correct, getattr(self, "last_typed", ""), override=True)
+
+    def action_mark_correct(self) -> None:
+        self._override(True)
+
+    def action_mark_incorrect(self) -> None:
+        self._override(False)
 
     def _lightning_advance(self) -> None:
         if self.awaiting:
@@ -817,6 +1009,7 @@ class SessionScreen(Screen[list[Item]]):
         self.current = (item, part)
         box = self.query_one("#answer", Input)
         box.remove_class("correct", "incorrect")
+        box.disabled = False
         box.value = ""
         box.focus()
         self.query_one("#feedback", Static).update(Text("Undone — answer again", style="yellow"))
@@ -878,6 +1071,10 @@ class SessionScreen(Screen[list[Item]]):
 
     def action_leave(self) -> None:
         q = self.queue
+        if self.mode == "study":
+            self.wk.core.end_session()
+            self.dismiss(q.finished)
+            return
         if self.mode == "review" and not self.popup and not q.wrapping_up and q.pending:
             q.wrap_up()
             self.update_status()
@@ -912,7 +1109,7 @@ class SummaryScreen(Screen[None]):
         n = len(self.items)
         good = sum(1 for i in self.items if i.all_correct)
         head = Text()
-        head.append(f"{'Reviews' if self.mode == 'review' else 'Lessons'} complete: {n} item(s)", style="bold")
+        head.append(f"{ {'review': 'Reviews', 'lesson': 'Lessons', 'study': 'Self-study'}[self.mode] } complete: {n} item(s)", style="bold")
         if n:
             head.append(f"   {100 * good // n}% correct first time")
         if self.failed:
@@ -945,6 +1142,32 @@ class SummaryScreen(Screen[None]):
 # --------------------------------------------------------------------------- lessons
 
 
+class StudyPickerScreen(ModalScreen[str | None]):
+    """Choose a set to drill without touching the SRS."""
+
+    DEFAULT_CSS = """
+    StudyPickerScreen { align: center middle; }
+    StudyPickerScreen > OptionList { width: 60; border: thick $primary; }
+    """
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, sets: list[tuple[str, str, int]]) -> None:
+        super().__init__()
+        self.sets = sets
+
+    def compose(self) -> ComposeResult:
+        ol = OptionList(*[Option(Text.assemble((f"{label:<28}", "bold"), (f"{n} items", "dim")), id=sid, disabled=n == 0) for sid, label, n in self.sets])
+        ol.border_title = "Self-study · practice only, nothing is sent to WaniKani"
+        yield ol
+
+    @on(OptionList.OptionSelected)
+    def _pick(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(event.option.id)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class LessonPickerScreen(Screen[list[Item] | None]):
     """Choose which available lessons to take."""
 
@@ -952,10 +1175,10 @@ class LessonPickerScreen(Screen[list[Item] | None]):
     LessonPickerScreen #hint { dock: bottom; height: 1; padding: 0 2; background: $panel; }
     """
     BINDINGS = [
-        Binding("escape", "cancel", "Cancel"),
-        Binding("space", "toggle", "Toggle"),
-        Binding("a", "all", "All/none"),
-        Binding("t", "cycle_type", "Type"),
+        Binding(key("back"), "cancel", "Cancel"),
+        Binding(key("select"), "toggle", "Toggle"),
+        Binding(key("select_all"), "all", "All/none"),
+        Binding(key("type_filter"), "cycle_type", "Type"),
         Binding("enter", "start", "Start", priority=True),
     ]
     TYPES = [None, "radical", "kanji", "vocabulary"]
@@ -1037,12 +1260,12 @@ class LessonScreen(Screen[None]):
     """
     BINDINGS = [
         Binding(key("next"), "next", "Next"),
-        Binding("n", "next", "Next", show=False),
+        Binding(key("next_alt"), "next", "Next", show=False),
         Binding(key("prev"), "prev", "Previous"),
-        Binding("p", "prev", "Previous", show=False),
+        Binding(key("prev_alt"), "prev", "Previous", show=False),
         Binding(key("audio"), "audio", "Audio"),
         Binding(key("strokes"), "strokes", "Strokes"),
-        Binding("f2", "full_app", "Open full WaniKani"),
+        Binding(key("full_app"), "full_app", "Open full WaniKani"),
         Binding(key("leave"), "leave", "Quit lessons"),
     ] + ([Binding("l", "next", "Next", show=False), Binding("h", "prev", "Previous", show=False)] if _vim() else [])
 

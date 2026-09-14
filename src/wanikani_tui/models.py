@@ -259,3 +259,18 @@ def next_srs_stage(stage: int, incorrect: int) -> int:
     penalty = 2 if stage >= 5 else 1
     steps = (incorrect + 1) // 2  # ceil(incorrect / 2)
     return max(1, stage - steps * penalty)
+
+
+def fmt_reading(reading: str, kind: str | None) -> str:
+    """On'yomi in katakana when the user asked for the dictionary convention."""
+    if kind == "onyomi":
+        try:
+            from .config import settings
+
+            if settings().ui_katakana_onyomi:
+                import wanakana
+
+                return wanakana.to_katakana(reading)
+        except Exception:  # noqa: BLE001
+            pass
+    return reading

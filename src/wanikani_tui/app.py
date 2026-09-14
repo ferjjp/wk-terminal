@@ -18,8 +18,8 @@ from textual.widgets import DataTable, Footer, Header, Static
 from .config import settings
 from .core import Core
 from .keys import key
-from .models import SRS_COLOR, Subject, TYPE_COLOR
-from .screens import BrowseScreen, LessonPickerScreen, LessonScreen, SessionScreen, SubjectScreen
+from .models import SRS_COLOR, Subject, TYPE_COLOR, srs_color, srs_group
+from .screens import BrowseScreen, LessonPickerScreen, LessonScreen, SessionScreen, StudyPickerScreen, SubjectScreen
 from .sync import SyncCancelled
 
 
@@ -44,13 +44,14 @@ class DashboardScreen(Screen[None]):
     BINDINGS = [
         Binding(key("reviews"), "reviews", "Reviews"),
         Binding(key("lessons"), "lessons", "Lessons"),
-        Binding("L", "pick_lessons", "Pick lessons"),
+        Binding(key("pick_lessons"), "pick_lessons", "Pick lessons"),
         Binding(key("browse"), "browse", "Browse"),
-        Binding("e", "leeches", "Leeches"),
+        Binding(key("leeches"), "leeches", "Leeches"),
+        Binding(key("study"), "study", "Self-study"),
         Binding(key("stats"), "stats", "Stats"),
         Binding(key("sync"), "sync", "Sync"),
         Binding(key("quit"), "app.quit", "Quit"),
-    ] + ([Binding("j", "scroll_down", "Down", show=False), Binding("k", "scroll_up", "Up", show=False)] if settings().ui_vim_keys else [])
+    ] + ([Binding(key("scroll_down"), "scroll_down", "Down", show=False), Binding(key("scroll_up"), "scroll_up", "Up", show=False)] if settings().ui_vim_keys else [])
 
     @property
     def wk(self) -> "WKApp":
@@ -97,10 +98,10 @@ class DashboardScreen(Screen[None]):
             act.append(f"\n{pending} submission(s) waiting to be sent — they go out on the next sync", style="bold yellow")
         leeches = len(db.leeches())
         if leeches:
-            act.append(f"\n{leeches} leech(es)  [e] to review them", style="dim")
+            act.append(f"\n{leeches} leech(es)  [{key('leeches')}] to see them", style="dim")
         act.append(
-            f"\n\n[{key('reviews')}] reviews  [{key('lessons')}] lessons  [L] pick lessons  [{key('browse')}] browse"
-            f"  [{key('stats')}] stats  [{key('sync')}] sync  [{key('quit')}] quit", style="dim",
+            f"\n\n[{key('reviews')}] reviews  [{key('lessons')}] lessons  [{key('pick_lessons')}] pick lessons  [{key('browse')}] browse"
+            f"  [{key('study')}] self-study  [{key('stats')}] stats  [{key('sync')}] sync  [{key('quit')}] quit", style="dim",
         )
         self.query_one("#actions", Static).update(act)
 
@@ -132,16 +133,34 @@ class DashboardScreen(Screen[None]):
         self.query_one("#srs", Panel).update(srs)
 
         fc = Text()
-        buckets = Counter(ts.astimezone().replace(minute=0, second=0, microsecond=0) for ts in db.upcoming_reviews(hours=24))
+        buckets: dict = {}
+        for ts, stage in db.upcoming_reviews_by_stage(hours=24):
+            hour = ts.astimezone().replace(minute=0, second=0, microsecond=0)
+            buckets.setdefault(hour, Counter())[srs_group(stage)] += 1
         cum = reviews
         if not buckets:
             fc.append("Nothing due in the next 24 hours", style="dim")
+        else:
+            maxn = max(sum(c.values()) for c in buckets.values())
+            scale = min(1.0, 40 / max(1, maxn))
         for hour in sorted(buckets):
-            n = buckets[hour]
+            counts = buckets[hour]
+            n = sum(counts.values())
             cum += n
             fc.append(f"{hour.strftime('%a %H:%M')}  ")
-            fc.append("▇" * min(n, 40), style="#00aaff")
+            drawn = 0
+            for grp in ("apprentice", "guru", "master", "enlightened"):
+                w = int(round(counts.get(grp, 0) * scale))
+                if counts.get(grp, 0) and w == 0:
+                    w = 1
+                fc.append("▇" * w, style=SRS_COLOR[grp])
+                drawn += w
             fc.append(f" +{n}  ({cum})\n", style="dim")
+        if buckets:
+            fc.append("\n")
+            for grp in ("apprentice", "guru", "master", "enlightened"):
+                fc.append("▇ ", style=SRS_COLOR[grp])
+                fc.append(f"{grp}  ", style="dim")
         self.query_one("#forecast", Panel).update(fc)
 
         last = db.get_meta("last_sync")
@@ -184,6 +203,20 @@ class DashboardScreen(Screen[None]):
         user = self.wk.core.user()
         self.app.push_screen(BrowseScreen(user.get("level", 1), 60, flt="leech"), lambda _: self.refresh_stats())
 
+    def action_study(self) -> None:
+        sets = self.wk.core.study_sets()
+
+        def start(set_id: str | None) -> None:
+            if not set_id:
+                return
+            items = self.wk.core.study_set_items(set_id)
+            if not items:
+                self.notify("That set is empty")
+                return
+            self.app.push_screen(SessionScreen("study", items), lambda _: self.refresh_stats())
+
+        self.app.push_screen(StudyPickerScreen(sets), start)
+
     def action_stats(self) -> None:
         self.app.push_screen(StatsScreen())
 
@@ -200,7 +233,7 @@ class StatsScreen(Screen[None]):
     StatsScreen Panel { margin: 0 0 1 0; }
     StatsScreen DataTable { height: auto; max-height: 14; margin-bottom: 1; }
     """
-    BINDINGS = [Binding("escape", "back", "Back")]
+    BINDINGS = [Binding(key("back"), "back", "Back")]
     LEVELS = ["#2b2b2b", "#0e4429", "#006d32", "#26a641", "#39d353"]
 
     def compose(self) -> ComposeResult:

@@ -46,6 +46,7 @@ wk daemon install     # run it as a systemd user service, started with your sess
 wk daemon status | uninstall
 wk export stats       # CSV: per-item accuracy + leech score (also: sessions, items, reviews; -o file.csv)
 wk config             # write ~/.config/wanikani/config.toml with all defaults
+wk keys               # every action with its current key; rebind under [keys] in the config
 wk doctor             # what image protocol the terminal negotiates
 wk --images tgp       # force kitty graphics (auto | tgp | sixel | halfcell | unicode | none)
 ```
@@ -63,6 +64,7 @@ Every key below can be changed under `[keys]` in the config file.
 | `L` | Pick which lessons to take |
 | `b` | Browse items by level |
 | `e` | Your leeches |
+| `x` | Self-study: drill a set (current level, leeches, recent mistakes…) without touching the SRS |
 | `t` | Stats |
 | `s` | Sync now |
 | `q` | Quit |
@@ -77,6 +79,7 @@ Every key below can be changed under `[keys]` in the config file.
 | `/` | Search characters, meaning or slug |
 | `t` | Cycle type: all, radicals, kanji, vocabulary |
 | `f` | Cycle filter: all, due in 24 h, leeches, apprentice … burned |
+| `x` | Self-study quiz over whatever the list shows |
 | `Esc` | Back |
 
 ### Item
@@ -85,6 +88,7 @@ Every key below can be changed under `[keys]` in the config file.
 |---|---|
 | `a` | Play audio (vocabulary) |
 | `s` | Stroke order (kanji) |
+| | Kanji also show their composition (Keisei: phonetic mark, expected reading, quality 天上中下) and extra look-alikes (Niai) |
 | `y` | Add a meaning synonym to your account |
 | `n` | Edit your note |
 | `g` | Jump to a related item from a list |
@@ -101,6 +105,7 @@ Type the answer and press `Enter`. Readings convert romaji to kana as you type:
 | Key | Action |
 |---|---|
 | `Enter` | Check the answer, then continue |
+| `+` / `-` | Override the verdict: accept a rejected answer, or reject an accepted one (Double-Check) |
 | `Ctrl+Z` | Undo the last answer (until you continue) |
 | `F1` | Item details, after you answered |
 | `Esc` | Wrap up: finish the items already started, then quit. Press again to quit now |
@@ -192,6 +197,22 @@ For a due counter in the tmux status line:
 ```
 set -g status-right '#(wk due --format tmux) %H:%M'
 ```
+
+## Community data
+
+Kanji pages show two sections built on datasets from the WaniKani userscript community,
+fetched from GitHub on first use and cached under `~/.local/share/wanikani-tui/ext/`:
+
+- **Keisei** (形声): whether the kanji is a phonetic-semantic compound, which part is the
+  phonetic mark, what reading it predicts, a 天/上/中/下 quality mark, and the other kanji
+  sharing the mark, plus look-alikes that are read differently.
+- **Niai** (似合い): visually similar kanji beyond WaniKani's own list, merged from a manual
+  list, Keisei families and a stroke-similarity model the way the Niai userscript does.
+
+Both come from [mwil/wanikani-userscripts](https://github.com/mwil/wanikani-userscripts)
+(GPL-3.0); the similarity data derives from Lars Yencken's PhD datasets (CC BY 3.0). Set
+`community_data = false` under `[ui]` to skip them. `katakana_onyomi = true` shows on'yomi in
+katakana, the dictionary convention.
 
 ## Fonts
 

@@ -16,6 +16,9 @@ Terminal client for WaniKani (Python 3.13, Textual 8, uv). Installed as the `wk`
 - `widgets.py` — CharDisplay/Chip with kitty-graphics images; `ImageWidget` caches the terminal image per (image,size)
   because textual-image deletes/re-sends on every render (this wiped the kanji on keystrokes)
 - `images.py` — Pillow rendering of characters, radical SVGs (resvg), KanjiVG strokes · `audio.py`
+- `extdata.py` — Keisei/Niai community datasets (GPL-3, fetched on demand into data_dir/ext, pinned commit);
+  `keisei_info()` / `niai_similar()` replicate the userscripts' logic
+- `keys.py` — ACTIONS map (default key, where, what); every Binding goes through `key(action)`; `wk keys` lists them
 - `daemon.py` / `notify.py` — background sync + desktop notifications (D-Bus via jeepney on Linux; terminal-notifier
   on macOS) opening `wk pop` in a terminal window · `platform.py` — OS detection and defaults
 - `config.py` — paths, token, `config.toml` → `Settings` (cached; daemon reloads on mtime change) · `keys.py`
@@ -29,12 +32,15 @@ Terminal client for WaniKani (Python 3.13, Textual 8, uv). Installed as the `wk`
 - Screen callbacks passed to `push_screen` must be plain functions (a `dismiss()` inside a lambda from a
   message handler raises ScreenError).
 - Anything that writes to the account goes through `Core` so the retry queue and session history stay consistent.
+- SessionScreen modes: review (submits), lesson (starts assignments), study (never writes; `core.record_study`).
+  While a verdict is shown the Input is disabled so Enter / +/- / ctrl+z reach the screen bindings.
+- Do not define `_render` on widgets: it shadows Textual's `Widget._render`.
 
 ## Testing
 
 - `uv run pytest` — logic, core (fake API in `tests/fixtures.py`), platform selection, real-cache data shapes
   (skipped when `~/.local/share/wanikani-tui/cache.sqlite3` is absent)
-- `uv run python tests/drive.py out/` and `tests/drive2.py out/` — headless Textual drives that save PNG screenshots
+- `uv run python tests/drive.py out/`, `tests/drive2.py out/`, `tests/drive3.py out/` — headless Textual drives that save PNG screenshots
 - `uv run python tests/pty_capture.py "r,a,enter" out.bin` — runs the app in a pty and lists kitty-graphics
   commands against painted placeholder cells; use this for any image bug before theorising
 - Set `WK_IMAGES=none|unicode` for headless runs.

@@ -28,6 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_d.add_argument("action", nargs="?", default="run", choices=["run", "install", "uninstall", "status"])
     p_d.add_argument("--once", action="store_true", help="one cycle, then exit (for testing)")
     sub.add_parser("config", help="create the config file with defaults and print its path")
+    sub.add_parser("keys", help="list every action with its current key (rebind under [keys] in the config)")
     p_x = sub.add_parser("export", help="CSV export of your history")
     p_x.add_argument("what", choices=["sessions", "items", "reviews", "stats"],
                      help="sessions: one row per session · items: every answer you gave · reviews: WaniKani's review log · stats: per-item accuracy + leech score")
@@ -46,6 +47,22 @@ def main(argv: list[str] | None = None) -> int:
     if command == "config":
         f = write_default_config()
         print(f)
+        return 0
+    if command == "keys":
+        from .keys import describe, unknown_overrides
+
+        try:
+            rows = describe()
+        except RuntimeError as exc:
+            print(f"config error: {exc}", file=sys.stderr)
+            return 2
+        print(f"{'action':<16}{'key':<14}{'default':<10}where: what")
+        for action, cur, default, what, overridden in rows:
+            print(f"{action:<16}{cur:<14}{default:<10}{what}" + ("   (overridden)" if overridden else ""))
+        bad = unknown_overrides()
+        if bad:
+            print(f"\nunknown actions in [keys]: {', '.join(bad)}", file=sys.stderr)
+        print(f"\nrebind in {config_file()} under [keys], e.g.  reviews = \"R\"")
         return 0
     if command == "doctor":
         from .doctor import run
