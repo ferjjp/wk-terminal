@@ -8,6 +8,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -49,14 +50,43 @@ def popup_command(cfg: Settings) -> list[str]:
     return shlex.split(term) + wk_executable() + ["pop"]
 
 
+def session_env() -> dict[str, str]:
+    """The current graphical session variables, fresh from the systemd user manager when available.
+    A service started early in the session may have stale or missing DISPLAY/WAYLAND_DISPLAY."""
+    env = dict(os.environ)
+    try:
+        out = subprocess.run(["systemctl", "--user", "show-environment"], capture_output=True, text=True, timeout=5)
+        for line in out.stdout.splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                if k in ("DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "XDG_SESSION_TYPE",
+                         "XDG_CURRENT_DESKTOP", "XAUTHORITY", "GDK_BACKEND"):
+                    env[k] = v
+    except Exception:  # noqa: BLE001
+        pass
+    return env
+
+
 def open_popup(cfg: Settings) -> subprocess.Popen | None:
     cmd = popup_command(cfg)
     log.info("opening popup: %s", " ".join(cmd))
+    popup_log = state_dir() / "popup.log"
     try:
-        return subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        errf = open(popup_log, "ab")
+        errf.write(f"\n--- {datetime.now():%Y-%m-%d %H:%M:%S} {' '.join(cmd)}\n".encode())
+        proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=errf, stderr=errf, start_new_session=True,
+                                env=session_env(), cwd=str(Path.home()))
     except OSError as exc:
         log.error("could not start terminal: %s", exc)
         return None
+
+    def reap() -> None:  # avoid zombies and make a fast exit visible in the log
+        rc = proc.wait()
+        log.info("popup terminal exited with code %s (details in %s)", rc, popup_log)
+        errf.close()
+
+    threading.Thread(target=reap, daemon=True).start()
+    return proc
 
 
 def notify(title: str, body: str, action: bool, timeout_s: int = 120, icon: str | None = None) -> str:
@@ -96,6 +126,21 @@ def notification_content(core: Core) -> tuple[str | None, str]:
         return None, ""
 
 
+def test_popup(cfg: Settings) -> int:
+    """Launch the popup exactly as a click would, and report what happened."""
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    proc = open_popup(cfg)
+    if proc is None:
+        return 1
+    try:
+        rc = proc.wait(timeout=8)
+        print(f"the terminal exited after less than 8 s with code {rc}; see {state_dir() / 'popup.log'}")
+        return 1
+    except subprocess.TimeoutExpired:
+        print("popup window is open (still running after 8 s) — close it with Esc")
+        return 0
+
+
 def run(core: Core, once: bool = False) -> int:
     cfg = core.cfg
     log_file = state_dir() / "daemon.log"
@@ -107,6 +152,19 @@ def run(core: Core, once: bool = False) -> int:
              sys.platform, notification_backend(), cfg.daemon_sync_minutes, cfg.daemon_interval_minutes)
     if notification_backend() == "mac-osascript":
         log.warning("clicks on notifications need terminal-notifier (brew install terminal-notifier); using plain notifications")
+    from .notify import Listener
+
+    listener = Listener()
+    listening = listener.start()
+    if not listening:
+        log.warning("no persistent notification listener; falling back to a 2-minute click window")
+    current_nid = 0
+
+    def on_click(action: str) -> None:
+        log.info("notification answered: %r", action)
+        if action in ("review", "default"):
+            open_popup(cfg)
+
     last_sync = datetime.min
     last_notify = datetime.min
     cfg_file = config_file()
@@ -145,6 +203,11 @@ def run(core: Core, once: bool = False) -> int:
             if cfg.daemon_popup == "auto":
                 notify(title, "Opening a review window…", action=False, timeout_s=5, icon=icon)
                 open_popup(cfg)
+            elif cfg.daemon_popup == "notify" and listening:
+                listener.close(current_nid)  # one live reminder at a time
+                current_nid = listener.send(title, body, [("default", "Review now"), ("review", "Review now"), ("later", "Later")],
+                                            on_click, icon=icon or "accessories-dictionary")
+                log.info("notification %s shown; clicks are handled whenever they come", current_nid)
             elif cfg.daemon_popup == "notify":
                 choice = notify(title, body, action=True, icon=icon)
                 log.info("notification answered: %r", choice or "(closed or expired)")

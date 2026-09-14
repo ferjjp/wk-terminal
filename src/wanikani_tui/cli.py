@@ -27,6 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_d = sub.add_parser("daemon", help="background sync + desktop notifications")
     p_d.add_argument("action", nargs="?", default="run", choices=["run", "install", "uninstall", "status"])
     p_d.add_argument("--once", action="store_true", help="one cycle, then exit (for testing)")
+    p_d.add_argument("--test-popup", action="store_true", help="open the popup window exactly as a notification click would")
     sub.add_parser("config", help="create the config file with defaults and print its path")
     sub.add_parser("keys", help="list every action with its current key (rebind under [keys] in the config)")
     p_x = sub.add_parser("export", help="CSV export of your history")
@@ -37,6 +38,26 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    try:
+        return _main(argv)
+    except SystemExit:
+        raise
+    except BaseException:  # noqa: BLE001 - keep a trace even when the terminal window closes instantly
+        import traceback
+        from datetime import datetime
+
+        from .config import state_dir
+
+        try:
+            with open(state_dir() / "crash.log", "a", encoding="utf-8") as f:
+                f.write(f"\n--- {datetime.now():%Y-%m-%d %H:%M:%S} {' '.join(sys.argv)}\n")
+                f.write(traceback.format_exc())
+        except Exception:  # noqa: BLE001
+            pass
+        raise
+
+
+def _main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.images:
         os.environ["WK_IMAGES"] = args.images
@@ -134,12 +155,20 @@ def main(argv: list[str] | None = None) -> int:
             if args.action == "status":
                 print(daemon.service_status())
                 return 0
+            if args.test_popup:
+                from .config import settings as _settings
+
+                return daemon.test_popup(_settings())
             return daemon.run(core, once=args.once)
 
         from .app import WKApp
 
         if command == "pop":
+            from .config import state_dir
+
             result = WKApp(core, skip_sync=True, popup=True).run()
+            with open(state_dir() / "popup.log", "a", encoding="utf-8") as f:
+                f.write(f"wk pop finished: result={result!r} reviews_due={core.due_counts()[0]}\n")
             if result == "full":
                 WKApp(core).run()
             return 0
