@@ -89,6 +89,7 @@ Every key below can be changed under `[keys]` in the config file.
 | `a` | Play audio (vocabulary) |
 | `s` | Stroke order (kanji) |
 | | Kanji also show their composition (Keisei: phonetic mark, expected reading, quality 天上中下) and extra look-alikes (Niai) |
+| | Vocabulary shows its pitch accent and a reading breakdown: which reading each kanji contributes, coloured by whether it is a reading you know, a sound change (rendaku, sokuon) or an exception |
 | `y` | Add a meaning synonym to your account |
 | `n` | Edit your note |
 | `g` | Jump to a related item from a list |
@@ -106,11 +107,14 @@ Type the answer and press `Enter`. Readings convert romaji to kana as you type:
 |---|---|
 | `Enter` | Check the answer, then continue |
 | `+` / `-` | Override the verdict: accept a rejected answer, or reject an accepted one (Double-Check) |
+| `F3` | Anki mode for this session: `Space` reveals the answer, `1` knew it, `2` didn't (`anki = true` in the config makes it the default) |
 | `Ctrl+Z` | Undo the last answer (until you continue) |
 | `F1` | Item details, after you answered |
 | `Esc` | Wrap up: finish the items already started, then quit. Press again to quit now |
 | `F2` | In the popup window: open the full app in place |
 
+On a miss, the feedback names the item you probably confused it with (an item whose meaning
+or reading matches what you typed), shows the mnemonic, and for vocabulary the pitch accent.
 A submission that fails to reach WaniKani is queued and sent on the next sync.
 
 ### Lessons
@@ -209,10 +213,15 @@ fetched from GitHub on first use and cached under `~/.local/share/wanikani-tui/e
 - **Niai** (似合い): visually similar kanji beyond WaniKani's own list, merged from a manual
   list, Keisei families and a stroke-similarity model the way the Niai userscript does.
 
-Both come from [mwil/wanikani-userscripts](https://github.com/mwil/wanikani-userscripts)
+- **Pitch accent** for vocabulary, from the [Kanjium](https://github.com/mifunetoshiro/kanjium)
+  accents table (CC BY-SA 4.0, itself built on EDRDG data): high morae underlined, ꜜ at the
+  downstep, and the pattern name (heiban, atamadaka, nakadaka, odaka). Shown on the item page
+  and after a correct reading in reviews.
+
+Keisei and Niai come from [mwil/wanikani-userscripts](https://github.com/mwil/wanikani-userscripts)
 (GPL-3.0); the similarity data derives from Lars Yencken's PhD datasets (CC BY 3.0). Set
-`community_data = false` under `[ui]` to skip them. `katakana_onyomi = true` shows on'yomi in
-katakana, the dictionary convention.
+`community_data = false` or `pitch_accent = false` under `[ui]` to skip them.
+`katakana_onyomi = true` shows on'yomi in katakana, the dictionary convention.
 
 ## Fonts
 
@@ -236,6 +245,6 @@ uv run python tests/pty_capture.py "r,a,enter" out.bin   # kitty-graphics traffi
 MIT licence, see `LICENSE`. This is an unofficial client; WaniKani and its content belong to
 Tofugu LLC and are used through the official API under your own account. Stroke-order
 diagrams come from [KanjiVG](http://kanjivg.tagaini.net) by Ulrich Apel (CC BY-SA 3.0),
-fetched on demand and cached locally. Kana conversion by
+fetched on demand and cached locally. Pitch accent data from Kanjium (CC BY-SA 4.0). Kana conversion by
 [wanakana-python](https://github.com/Starwort/wanakana-python); terminal images by
 [textual-image](https://github.com/lnqs/textual-image).

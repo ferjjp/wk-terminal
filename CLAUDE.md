@@ -18,6 +18,9 @@ Terminal client for WaniKani (Python 3.13, Textual 8, uv). Installed as the `wk`
 - `images.py` — Pillow rendering of characters, radical SVGs (resvg), KanjiVG strokes · `audio.py`
 - `extdata.py` — Keisei/Niai community datasets (GPL-3, fetched on demand into data_dir/ext, pinned commit);
   `keisei_info()` / `niai_similar()` replicate the userscripts' logic
+- `pitch.py` — Kanjium accents table (CC BY-SA 4.0) fetched on demand; `describe()` renders morae + ꜜ
+- `analyzer.py` — vocabulary reading breakdown (which kanji reading, rendaku/sokuon/exception, known or not)
+- `confusion.py` — "confused with" guess on a wrong answer (subject JSON is ASCII-escaped: match `json.dumps(kana)`)
 - `keys.py` — ACTIONS map (default key, where, what); every Binding goes through `key(action)`; `wk keys` lists them
 - `daemon.py` / `notify.py` — background sync + desktop notifications (D-Bus via jeepney on Linux; terminal-notifier
   on macOS) opening `wk pop` in a terminal window · `platform.py` — OS detection and defaults
@@ -33,6 +36,7 @@ Terminal client for WaniKani (Python 3.13, Textual 8, uv). Installed as the `wk`
   message handler raises ScreenError).
 - Anything that writes to the account goes through `Core` so the retry queue and session history stay consistent.
 - SessionScreen modes: review (submits), lesson (starts assignments), study (never writes; `core.record_study`).
+  Anki mode (`self.anki`): Input disabled from the start, Space reveals, 1/2 grade via `_apply_verdict(override=True)`.
   While a verdict is shown the Input is disabled so Enter / +/- / ctrl+z reach the screen bindings.
 - Do not define `_render` on widgets: it shadows Textual's `Widget._render`.
 

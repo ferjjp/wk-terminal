@@ -138,6 +138,14 @@ class SubjectDetail(VerticalScroll):
         elif s.is_vocab and s.readings:
             meta.append("\nReading: ")
             meta.append(", ".join(r["reading"] for r in s.readings), style="bold")
+            if settings().ui_pitch_accent:
+                from . import pitch
+
+                if pitch.is_cached():
+                    pt = pitch.describe(s.characters or "", s.primary_readings[0] if s.primary_readings else "")
+                    if pt:
+                        meta.append("\nPitch: ")
+                        meta.append_text(pt)
         if s.parts_of_speech:
             meta.append("\n" + ", ".join(s.parts_of_speech), style="italic dim")
         meta.append("\n\n")
@@ -186,6 +194,10 @@ class SubjectDetail(VerticalScroll):
             yield Section("Reading mnemonic", body)
 
         comps = core.subjects(s.component_ids)
+        if s.is_vocab and s.type == "vocabulary" and comps:
+            yield ReadingBreakdown(s, comps)
+        if s.is_vocab and settings().ui_pitch_accent:
+            yield PitchSection(s)
         if comps:
             yield ChipSection(("Radicals" if s.is_kanji else "Kanji") + f" in this {s.label.lower()}", comps)
         similar = core.subjects(s.similar_ids)
@@ -211,6 +223,96 @@ class SubjectDetail(VerticalScroll):
     def related(self) -> list[Subject]:
         s = self.subject
         return self.wk.core.subjects(s.component_ids + s.similar_ids + s.amalgamation_ids)
+
+
+class ReadingBreakdown(Static):
+    """Which reading each kanji contributes to a vocabulary word, coloured by how familiar it should be."""
+
+    DEFAULT_CSS = """
+    ReadingBreakdown { border: round $secondary; padding: 0 1; margin: 0 0 1 0; height: auto; }
+    """
+
+    def __init__(self, vocab: Subject, kanji: list[Subject], **kw: Any) -> None:
+        super().__init__("", **kw)
+        self.border_title = "Reading breakdown"
+        self.vocab = vocab
+        self.kanji = kanji
+
+    def on_mount(self) -> None:
+        from .analyzer import analyze
+        from .models import Assignment
+
+        core = self.app.core  # type: ignore[attr-defined]
+        asg = {k.id: Assignment.from_raw(a) for k, a in ((k, core.db.assignment_for(k.id)) for k in self.kanji) if a}
+        segs = analyze(self.vocab, self.kanji, asg)
+        if not segs:
+            self.remove()
+            return
+        t = Text()
+        for seg in segs:
+            t.append(f" {seg.text} ", style=f"bold white on {seg.colour}" if seg.kind != "kana" else "bold")
+            t.append(f"{seg.reading} ", style=seg.colour if seg.kind != "kana" else "dim")
+        t.append("\n")
+        notes = []
+        for seg in segs:
+            if seg.kind == "kana" or seg.kanji is None:
+                continue
+            k = seg.kanji
+            prim = ", ".join(fmt_reading(r, k.primary_reading_type) for r in k.primary_readings)
+            how = seg.label
+            if seg.kind in ("rendaku", "sokuon"):
+                how += f" of {prim}"
+            elif seg.kind == "exception":
+                how += f", not built from {prim}"
+            state = "learned" if seg.known else "not learned yet"
+            notes.append(Text.assemble((f"{k.characters} ", f"bold {seg.colour}"), (f"{seg.reading}: {how} · {state}", "dim")))
+        for n in notes:
+            t.append("\n")
+            t.append_text(n)
+        t.append("\n\n")
+        for kind, lbl in (("onyomi", "known reading"), ("nanori", "rare reading"), ("rendaku", "sound change"), ("exception", "exceptional")):
+            t.append(" ■ ", style={"onyomi": "#2fbf5f", "nanori": "#e0b040", "rendaku": "#ffa040", "exception": "#e04040"}[kind])
+            t.append(lbl + "  ", style="dim")
+        self.update(t)
+
+
+class PitchSection(Static):
+    """Pitch accent for a vocabulary word; downloads the Kanjium table the first time."""
+
+    DEFAULT_CSS = """
+    PitchSection { border: round $secondary; padding: 0 1; margin: 0 0 1 0; height: auto; }
+    """
+
+    def __init__(self, vocab: Subject, **kw: Any) -> None:
+        super().__init__(Text("loading pitch accent…", style="dim"), **kw)
+        self.border_title = "Pitch accent"
+        self.vocab = vocab
+
+    def on_mount(self) -> None:
+        self._load()
+
+    @work(thread=True)
+    def _load(self) -> None:
+        from . import pitch
+
+        core = self.app.core  # type: ignore[attr-defined]
+        s = self.vocab
+        reading = s.primary_readings[0] if s.primary_readings else (s.characters or "")
+        body = Text()
+        any_hit = False
+        for r in s.readings or [{"reading": reading}]:
+            desc = pitch.describe(s.characters or "", r["reading"], core.fetch_bytes)
+            if desc:
+                any_hit = True
+                if body.plain:
+                    body.append("\n")
+                body.append_text(desc)
+        if not any_hit:
+            self.app.call_from_thread(self.remove)
+            return
+        body.append("\n\n")
+        body.append("underlined morae are high, ꜜ marks the drop · " + pitch.ATTRIBUTION, style="dim")
+        self.app.call_from_thread(self.update, body)
 
 
 class ExtSection(Vertical):
@@ -760,6 +862,10 @@ class SessionScreen(Screen[list[Item]]):
         Binding(key("undo"), "undo", "Undo"),
         Binding(key("mark_correct"), "mark_correct", "Accept", show=False, priority=True),
         Binding(key("mark_incorrect"), "mark_incorrect", "Reject", show=False, priority=True),
+        Binding(key("anki_reveal"), "anki_reveal", "Reveal", show=False, priority=True),
+        Binding(key("anki_correct"), "anki_correct", "Knew it", show=False, priority=True),
+        Binding(key("anki_incorrect"), "anki_incorrect", "Didn't know", show=False, priority=True),
+        Binding(key("anki_toggle"), "anki_toggle", "Anki mode", show=False),
         Binding("enter", "continue", "Continue", show=False),
         Binding(key("full_app"), "full_app", "Open full WaniKani"),
         Binding(key("audio").replace("a", "ctrl+a") if key("audio") == "a" else key("audio"), "audio", "Audio", show=False),
@@ -777,6 +883,8 @@ class SessionScreen(Screen[list[Item]]):
         )
         self.current: tuple[Item, Part] | None = None
         self.awaiting = False
+        self.anki = cfg.review_anki
+        self.revealed = False
         self.popup_done = 0
         self.popup_correct = 0
         self.last_answer: tuple[Item, Part, bool] | None = None
@@ -835,11 +943,17 @@ class SessionScreen(Screen[list[Item]]):
         prompt.update(Text(f"{s.label}  {part.value.title()}", style="bold"))
         box = self.query_one("#answer", Input)
         box.remove_class("correct", "incorrect")
-        box.disabled = False
         box.value = ""
-        box.placeholder = "Your response" if part is Part.MEANING else "答え"
-        box.focus()
-        self.query_one("#feedback", Static).update("")
+        self.revealed = False
+        if self.anki:
+            box.disabled = True
+            box.placeholder = f"Anki mode · {key('anki_reveal')} to reveal"
+            self.query_one("#feedback", Static).update(Text(f"Think of the answer, then press {key('anki_reveal')}", style="dim"))
+        else:
+            box.disabled = False
+            box.placeholder = "Your response" if part is Part.MEANING else "答え"
+            box.focus()
+            self.query_one("#feedback", Static).update("")
         self.update_status()
 
     def load_more(self) -> None:
@@ -924,7 +1038,7 @@ class SessionScreen(Screen[list[Item]]):
         rtype = s.primary_reading_type if s.is_kanji else None
         if correct:
             msg.append("Correct", style="bold green")
-            if override:
+            if override and not self.anki:
                 msg.append("  ·  accepted by you", style="yellow")
             elif result is not None and not result.exact:
                 msg.append(f"  ·  {result.message}", style="yellow")
@@ -934,16 +1048,27 @@ class SessionScreen(Screen[list[Item]]):
                 msg.append("\n" + ", ".join(fmt_reading(r, rtype) for r in s.accepted_readings), style="dim")
             if part is Part.READING and s.is_vocab and s.audio_urls and self.cfg.review_audio_autoplay:
                 self.wk.play_audio(s)
+            self._append_pitch(msg, s, part)
         else:
             msg.append("Incorrect", style="bold red")
-            if override:
+            if override and not self.anki:
                 msg.append("  ·  rejected by you", style="yellow")
-            msg.append(f"   you typed: {typed.strip()}", style="dim")
+            if typed.strip():
+                msg.append(f"   you typed: {typed.strip()}", style="dim")
             if part is Part.MEANING:
                 msg.append("\nAccepted: " + ", ".join(s.accepted_meanings[:6]), style="bold")
             else:
                 want = f" ({rtype.replace('yomi', "'yomi")})" if rtype else ""
                 msg.append("\nAccepted: " + ", ".join(fmt_reading(r, rtype) for r in s.accepted_readings) + want, style="bold")
+            self._append_pitch(msg, s, part)
+            if typed.strip() and not override:
+                from .confusion import guess
+
+                for other, why in guess(self.wk.core.db, s, part, typed):
+                    msg.append("\n")
+                    msg.append("Confused with ", style="dim")
+                    msg.append(f" {other.display_chars} ", style=f"bold white on {other.color}")
+                    msg.append(f" {other.primary_meaning}? {why}", style="dim")
             if self.cfg.review_show_mnemonic_on_miss:
                 mn = s.meaning_mnemonic if part is Part.MEANING else s.reading_mnemonic
                 if mn:
@@ -970,6 +1095,81 @@ class SessionScreen(Screen[list[Item]]):
         self.update_status()
         if correct and self.cfg.review_lightning and not override:
             self.set_timer(0.5, self._lightning_advance)
+
+    def _append_pitch(self, msg: Text, s: Subject, part: Part) -> None:
+        if part is not Part.READING or not s.is_vocab or not self.cfg.ui_pitch_accent:
+            return
+        from . import pitch
+
+        if not pitch.is_cached():
+            return
+        pt = pitch.describe(s.characters or "", s.primary_readings[0] if s.primary_readings else "")
+        if pt:
+            msg.append("\npitch: ", style="dim")
+            msg.append_text(pt)
+
+    # -- Anki mode -----------------------------------------------------------
+
+    def action_anki_toggle(self) -> None:
+        self.anki = not self.anki
+        self.notify("Anki mode " + ("on: reveal, then grade yourself" if self.anki else "off"))
+        if not self.awaiting:
+            self.next_prompt_same()
+
+    def next_prompt_same(self) -> None:
+        """Re-show the current prompt after a mode change."""
+        cur = self.current
+        if cur:
+            self.queue.last = cur
+            item, part = cur
+            self.current = None
+            # rebuild the prompt widgets without advancing the queue
+            self.awaiting = False
+            nxt = (item, part)
+            self.current = nxt
+            box = self.query_one("#answer", Input)
+            box.value = ""
+            self.revealed = False
+            if self.anki:
+                box.disabled = True
+                box.placeholder = f"Anki mode · {key('anki_reveal')} to reveal"
+                self.query_one("#feedback", Static).update(Text(f"Think of the answer, then press {key('anki_reveal')}", style="dim"))
+            else:
+                box.disabled = False
+                box.placeholder = "Your response" if part is Part.MEANING else "答え"
+                box.focus()
+                self.query_one("#feedback", Static).update("")
+
+    def action_anki_reveal(self) -> None:
+        if not self.anki or self.awaiting or not self.current or self.revealed:
+            return
+        item, part = self.current
+        s = item.subject
+        self.revealed = True
+        msg = Text()
+        if part is Part.MEANING:
+            msg.append(", ".join(s.accepted_meanings[:6]), style="bold")
+        else:
+            rtype = s.primary_reading_type if s.is_kanji else None
+            msg.append(", ".join(fmt_reading(r, rtype) for r in s.accepted_readings), style="bold")
+            if rtype:
+                msg.append(f"  ({rtype.replace('yomi', "'yomi")})", style="dim")
+            self._append_pitch(msg, s, part)
+            if s.is_vocab and s.audio_urls and self.cfg.review_audio_autoplay:
+                self.wk.play_audio(s)
+        msg.append(f"\n\n{key('anki_correct')} knew it   {key('anki_incorrect')} didn't know", style="dim")
+        self.query_one("#feedback", Static).update(msg)
+        self.query_one("#answer", Input).value = "(revealed)"
+
+    def action_anki_correct(self) -> None:
+        if self.anki and self.revealed and not self.awaiting and self.current:
+            item, part = self.current
+            self._apply_verdict(item, part, True, "", override=True)
+
+    def action_anki_incorrect(self) -> None:
+        if self.anki and self.revealed and not self.awaiting and self.current:
+            item, part = self.current
+            self._apply_verdict(item, part, False, "", override=True)
 
     def action_continue(self) -> None:
         if self.awaiting:
@@ -1009,10 +1209,15 @@ class SessionScreen(Screen[list[Item]]):
         self.current = (item, part)
         box = self.query_one("#answer", Input)
         box.remove_class("correct", "incorrect")
-        box.disabled = False
         box.value = ""
-        box.focus()
-        self.query_one("#feedback", Static).update(Text("Undone — answer again", style="yellow"))
+        self.revealed = False
+        if self.anki:
+            box.disabled = True
+            self.query_one("#feedback", Static).update(Text(f"Undone — press {key('anki_reveal')} to reveal again", style="yellow"))
+        else:
+            box.disabled = False
+            box.focus()
+            self.query_one("#feedback", Static).update(Text("Undone — answer again", style="yellow"))
         self.update_status()
 
     def finish(self) -> None:

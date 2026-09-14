@@ -79,6 +79,7 @@ DEFAULT_CONFIG = """\
 # wanikani-tui configuration. Every key is optional; these are the defaults.
 
 [review]
+anki = false                 # Anki mode: reveal the answer, then grade yourself (no typing)
 lightning = false            # advance automatically after a correct answer
 order = "random"             # random | level | back_to_back
 show_mnemonic_on_miss = true
@@ -98,6 +99,7 @@ colorblind = false           # Okabe-Ito palette for SRS stages
 vim_keys = true              # j/k scroll, h/l navigate lessons
 compact = "auto"             # auto | true | false  (small panes: shorter image, tighter layout)
 katakana_onyomi = false      # show on'yomi in katakana (dictionary convention)
+pitch_accent = true          # fetch Kanjium pitch-accent data (CC BY-SA 4.0) on first use for vocabulary
 community_data = true        # fetch Keisei/Niai datasets (GPL-3) from GitHub on first use for the item screen
 
 [daemon]
@@ -123,6 +125,7 @@ notify_lessons = false       # also notify when lessons are waiting and nothing 
 # related = "g"          open = "o"           audio = "a"            strokes = "s"
 # synonym = "y"          note = "n"           info = "f1"            undo = "ctrl+z"
 # mark_correct = "plus"  mark_incorrect = "minus"                    leave = "escape"
+# anki_reveal = "space"  anki_correct = "1"   anki_incorrect = "2"   anki_toggle = "f3"
 # full_app = "f2"        next = "right"       prev = "left"          select = "space"  select_all = "a"
 # scroll_down = "j"      scroll_up = "k"
 """
@@ -130,6 +133,7 @@ notify_lessons = false       # also notify when lessons are waiting and nothing 
 
 @dataclass
 class Settings:
+    review_anki: bool = False
     review_lightning: bool = False
     review_order: str = "random"
     review_show_mnemonic_on_miss: bool = True
@@ -143,6 +147,7 @@ class Settings:
     ui_vim_keys: bool = True
     ui_compact: str = "auto"
     ui_katakana_onyomi: bool = False
+    ui_pitch_accent: bool = True
     ui_community_data: bool = True
     daemon_sync_minutes: int = 10
     daemon_interval_minutes: int = 30
@@ -173,6 +178,7 @@ def settings() -> Settings:
         except tomllib.TOMLDecodeError as exc:
             raise RuntimeError(f"{f}: {exc}") from exc
     s = Settings()
+    s.review_anki = bool(_get(raw, "review", "anki", False))
     s.review_lightning = bool(_get(raw, "review", "lightning", s.review_lightning))
     s.review_order = str(_get(raw, "review", "order", s.review_order))
     s.review_show_mnemonic_on_miss = bool(_get(raw, "review", "show_mnemonic_on_miss", True))
@@ -187,6 +193,7 @@ def settings() -> Settings:
     compact = _get(raw, "ui", "compact", "auto")
     s.ui_compact = "true" if compact is True else "false" if compact is False else str(compact)
     s.ui_katakana_onyomi = bool(_get(raw, "ui", "katakana_onyomi", False))
+    s.ui_pitch_accent = bool(_get(raw, "ui", "pitch_accent", True))
     s.ui_community_data = bool(_get(raw, "ui", "community_data", True))
     s.daemon_sync_minutes = int(_get(raw, "daemon", "sync_minutes", 10))
     s.daemon_interval_minutes = int(_get(raw, "daemon", "interval_minutes", 30))
