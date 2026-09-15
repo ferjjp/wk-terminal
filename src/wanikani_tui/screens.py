@@ -1063,6 +1063,7 @@ class SessionScreen(Screen[list[Item]]):
             if part is Part.READING and s.is_vocab and s.audio_urls and self.cfg.review_audio_autoplay:
                 self.wk.play_audio(s)
             self._append_pitch(msg, s, part)
+            self._append_breakdown(msg, s, part)
         else:
             msg.append("Incorrect", style="bold red")
             if override and not self.anki:
@@ -1075,6 +1076,7 @@ class SessionScreen(Screen[list[Item]]):
                 want = f" ({rtype.replace('yomi', "'yomi")})" if rtype else ""
                 msg.append("\nAccepted: " + ", ".join(fmt_reading(r, rtype) for r in s.accepted_readings) + want, style="bold")
             self._append_pitch(msg, s, part)
+            self._append_breakdown(msg, s, part)
             if typed.strip() and not override:
                 from .confusion import guess
 
@@ -1109,6 +1111,34 @@ class SessionScreen(Screen[list[Item]]):
         self.update_status()
         if correct and self.cfg.review_lightning and not override:
             self.set_timer(0.5, self._lightning_advance)
+
+    def _append_breakdown(self, msg: Text, s: Subject, part: Part) -> None:
+        """After a vocabulary reading: which reading each kanji used, and the readings it did not."""
+        if part is not Part.READING or s.type != "vocabulary" or not s.component_ids:
+            return
+        from .analyzer import analyze
+
+        core = self.wk.core
+        kanji = core.subjects(s.component_ids)
+        asg = {k.id: a for k in kanji if (a := core.assignment_for(k.id))}
+        segs = analyze(s, kanji, asg)
+        if not segs:
+            return
+        msg.append("\n")
+        first = True
+        for seg in segs:
+            if seg.kind == "kana" or seg.kanji is None:
+                continue
+            if not first:
+                msg.append("   ")
+            first = False
+            k = seg.kanji
+            msg.append(f"{k.characters} ", style=f"bold {seg.colour}")
+            msg.append(seg.reading, style=seg.colour)
+            others = [fmt_reading(r["reading"], r.get("type")) for r in k.readings
+                      if wanakana_hira(r["reading"]) not in (seg.reading, seg.reading.rstrip("っ"))]
+            label = seg.label.replace(" (alternative)", "")
+            msg.append(f" ({label}" + (f"; also {', '.join(others)}" if others else "") + ")", style="dim")
 
     def _append_pitch(self, msg: Text, s: Subject, part: Part) -> None:
         if part is not Part.READING or not s.is_vocab or not self.cfg.ui_pitch_accent:
@@ -1169,6 +1199,7 @@ class SessionScreen(Screen[list[Item]]):
             if rtype:
                 msg.append(f"  ({rtype.replace('yomi', "'yomi")})", style="dim")
             self._append_pitch(msg, s, part)
+            self._append_breakdown(msg, s, part)
             if s.is_vocab and s.audio_urls and self.cfg.review_audio_autoplay:
                 self.wk.play_audio(s)
         msg.append(f"\n\n{key('anki_correct')} knew it   {key('anki_incorrect')} didn't know", style="dim")
