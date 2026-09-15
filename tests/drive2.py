@@ -70,7 +70,8 @@ async def main() -> None:
         scr = app.screen
         assert isinstance(scr, SessionScreen)
         item, part = scr.current
-        await pilot.press(*"zzzz", "enter"); await pilot.pause()
+        wrong = "totally wrong" if part is Part.MEANING else "か"
+        await pilot.press(*list(wrong), "enter"); await pilot.pause()
         assert scr.awaiting and item.incorrect == 1
         await pilot.press("ctrl+z"); await pilot.pause()
         assert not scr.awaiting and item.incorrect == 0 and scr.current == (item, part)
