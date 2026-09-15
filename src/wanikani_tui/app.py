@@ -51,6 +51,7 @@ class DashboardScreen(Screen[None]):
         Binding(key("stats"), "stats", "Stats"),
         Binding(key("sync"), "sync", "Sync"),
         Binding(key("quit"), "app.quit", "Quit"),
+        Binding(key("back"), "app.quit", "Quit", show=False),  # Esc on the dashboard = quit, like every other screen's "back"
     ] + ([Binding(key("scroll_down"), "scroll_down", "Down", show=False), Binding(key("scroll_up"), "scroll_up", "Up", show=False)] if settings().ui_vim_keys else [])
 
     @property

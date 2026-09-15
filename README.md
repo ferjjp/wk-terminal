@@ -69,7 +69,7 @@ Every key below can be changed under `[keys]` in the config file.
 | `x` | Self-study: drill a set (current level, leeches, recent mistakes…) without touching the SRS |
 | `t` | Stats |
 | `s` | Sync now |
-| `q` | Quit |
+| `q` / `Esc` | Quit |
 
 ### Browse
 
