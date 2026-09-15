@@ -958,7 +958,11 @@ class SessionScreen(Screen[list[Item]]):
 
     def load_more(self) -> None:
         """Popup: pull the next best item into a fresh queue and keep the session going."""
-        items = self.wk.core.pick_popup_reviews(max(1, self.cfg.daemon_popup_items))
+        from .daemon import recent_nominations, remember_nomination
+
+        items = self.wk.core.pick_popup_reviews(max(1, self.cfg.daemon_popup_items), avoid=recent_nominations())
+        if items:
+            remember_nomination(items[0].subject.id)
         if not items:
             self.wk.core.end_session()
             self.dismiss(self.queue.finished)

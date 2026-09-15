@@ -343,7 +343,19 @@ class WKApp(App[str | None]):
             self.run_sync(full=self.full_sync or self.core.needs_full_sync())
 
     def _start_popup(self) -> None:
-        mode, items = self.core.popup_items()
+        from .daemon import recent_nominations, remember_nomination
+
+        nominated = recent_nominations()
+        # the notification named an item: show that one, and rotate away from earlier picks
+        avoid = [x for x in nominated[:-1]] if nominated else []
+        mode, items = self.core.popup_items(avoid=avoid)
+        if nominated and items and mode == "review":
+            wanted = nominated[-1]
+            due_ids = {a["data"]["subject_id"] for a in self.core.db.reviews_available()}
+            if wanted in due_ids and items[0].subject.id != wanted:
+                items = [i for i in self.core.review_items(order="oldest") if i.subject.id == wanted] or items
+        if items:
+            remember_nomination(items[0].subject.id)
         if not items:
             self.exit(message="Nothing to review or learn right now.")
             return

@@ -129,10 +129,10 @@ class Core:
     def all_lesson_items(self) -> list[Item]:
         return self.lesson_items(ids=[a["data"]["subject_id"] for a in self.db.lessons_available()])
 
-    def popup_items(self) -> tuple[str, list[Item]]:
+    def popup_items(self, avoid: Iterable[int] = ()) -> tuple[str, list[Item]]:
         """What a popup window should show: ('review', items) or ('lesson', items) or ('', [])."""
         n = max(1, self.cfg.daemon_popup_items)
-        reviews = self.pick_popup_reviews(n) if self.cfg.popup_pick == "smart" else self.review_items(limit=n, order="oldest")
+        reviews = self.pick_popup_reviews(n, avoid=avoid) if self.cfg.popup_pick == "smart" else self.review_items(limit=n, order="oldest")
         lessons = self.lesson_items(batch=1)
         prefer = self.cfg.daemon_prefer
         if prefer == "lessons" and lessons:
@@ -145,18 +145,22 @@ class Core:
             return "lesson", lessons
         return "", []
 
-    def pick_popup_reviews(self, n: int = 1) -> list[Item]:
+    def pick_popup_reviews(self, n: int = 1, avoid: Iterable[int] = ()) -> list[Item]:
         """Choose the reviews a popup interrupts you with.
 
         Prefers what you are actually at risk of forgetting: leeches, low SRS stages, items overdue for
-        long, poor accuracy. Skips anything answered in the last hour, and varies types so it is not
-        always vocabulary. Deterministic scoring with a small random jitter to avoid the same item twice.
+        long, poor accuracy. Skips anything answered recently (`popup_skip_recent_hours`) and anything in
+        `avoid` (items nominated by the last few notifications), so the reminders rotate through your
+        queue instead of hammering one item. Falls back gracefully when the queue is tiny.
         """
         due = [Assignment.from_raw(a) for a in self.db.reviews_available()]
         if not due:
             return []
         seen = self.db.recently_seen(hours=self.cfg.popup_skip_recent_hours)
-        candidates = [a for a in due if a.subject_id not in seen] or due
+        avoid = set(avoid)
+        candidates = [a for a in due if a.subject_id not in seen and a.subject_id not in avoid]
+        if not candidates:
+            candidates = [a for a in due if a.subject_id not in avoid] or due
         subs = {s.id: s for s in self.subjects(a.subject_id for a in candidates)}
         stats = self.db.review_stats_map(subs)
         leech = self.db.leech_scores()

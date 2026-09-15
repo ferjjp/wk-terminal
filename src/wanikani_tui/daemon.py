@@ -98,12 +98,38 @@ def notify(title: str, body: str, action: bool, timeout_s: int = 120, icon: str 
                             click_command=popup_command(settings()) if action else None)
 
 
+RECENT_NOMINATIONS = 4
+
+
+def recent_nominations() -> list[int]:
+    f = state_dir() / "nominated.json"
+    try:
+        import json
+
+        return [int(x) for x in json.loads(f.read_text())][-RECENT_NOMINATIONS:]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def remember_nomination(subject_id: int) -> None:
+    f = state_dir() / "nominated.json"
+    ids = [x for x in recent_nominations() if x != subject_id] + [subject_id]
+    try:
+        import json
+
+        f.write_text(json.dumps(ids[-RECENT_NOMINATIONS:]))
+    except OSError:
+        pass
+
+
 def notification_content(core: Core) -> tuple[str | None, str]:
-    """(icon path, description) for the item the popup would show."""
+    """(icon path, description) for the item the popup would show. Rotates away from the last few picks."""
     try:
         from .images import text_image
 
-        mode, items = core.popup_items()
+        mode, items = core.popup_items(avoid=recent_nominations())
+        if items:
+            remember_nomination(items[0].subject.id)
         if items:
             s = items[0].subject
             img = text_image(s.characters or s.primary_meaning, s.color, px=96 if s.characters else 28, pad=14)
@@ -112,7 +138,8 @@ def notification_content(core: Core) -> tuple[str | None, str]:
             from .models import SRS_NAMES
 
             why = "a leech you keep missing" if leech >= 2 else f"{SRS_NAMES.get(stage, '')}".lower()
-            desc = f"Up next: {s.display_chars} · {s.primary_meaning}" + (f" ({why})" if why else "")
+            due_total = len(core.db.reviews_available())
+            desc = f"Up next: {s.display_chars} · {s.primary_meaning}" + (f" ({why})" if why else "") + f" · {due_total} due"
             if mode == "lesson":
                 desc = f"New {s.label.lower()}: {s.display_chars} · {s.primary_meaning}"
         else:

@@ -119,3 +119,13 @@ def test_export(tmp_path):
         assert out.exists() and "rows" in msg, msg
         lines = out.read_text().splitlines()
         assert len(lines) >= 2, what
+
+
+def test_popup_rotation_avoids_recent_nominations():
+    core, api, db = make()
+    first = core.pick_popup_reviews(1)[0].subject.id
+    second = core.pick_popup_reviews(1, avoid=[first])[0].subject.id
+    assert second != first
+    # avoiding everything still returns something
+    ids = [a["data"]["subject_id"] for a in db.reviews_available()]
+    assert core.pick_popup_reviews(1, avoid=ids)
