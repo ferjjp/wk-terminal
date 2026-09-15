@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -101,11 +102,80 @@ def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class _Rows:
+    """A fully fetched result, so the connection lock can be released before callers iterate."""
+
+    def __init__(self, rows: list, lastrowid, description) -> None:
+        self._rows = rows
+        self._i = 0
+        self.lastrowid = lastrowid
+        self.description = description
+
+    def fetchall(self) -> list:
+        out = self._rows[self._i:]
+        self._i = len(self._rows)
+        return out
+
+    def fetchone(self):
+        if self._i >= len(self._rows):
+            return None
+        row = self._rows[self._i]
+        self._i += 1
+        return row
+
+    def __iter__(self):
+        while self._i < len(self._rows):
+            yield self.fetchone()
+
+
+class _LockedConnection:
+    """sqlite3 connections are not safe to share between threads without serialisation; Textual workers
+    and the UI thread both query the cache, so every statement runs under one re-entrant lock and its
+    rows are fetched eagerly before the lock is released."""
+
+    def __init__(self, path: str) -> None:
+        self._conn = sqlite3.connect(path, check_same_thread=False)
+        self._conn.row_factory = sqlite3.Row
+        self._lock = threading.RLock()
+
+    def execute(self, sql: str, params=()) -> _Rows:
+        with self._lock:
+            cur = self._conn.execute(sql, params)
+            rows = cur.fetchall() if cur.description else []
+            return _Rows(rows, cur.lastrowid, cur.description)
+
+    def executescript(self, script: str) -> None:
+        with self._lock:
+            self._conn.executescript(script)
+
+    def commit(self) -> None:
+        with self._lock:
+            self._conn.commit()
+
+    def rollback(self) -> None:
+        with self._lock:
+            self._conn.rollback()
+
+    def close(self) -> None:
+        with self._lock:
+            self._conn.close()
+
+    def __enter__(self):  # `with db.conn:` = one transaction, lock held for the whole block
+        self._lock.acquire()
+        self._conn.__enter__()
+        return self
+
+    def __exit__(self, *exc):
+        try:
+            return self._conn.__exit__(*exc)
+        finally:
+            self._lock.release()
+
+
 class Database:
     def __init__(self, path: Path | str) -> None:
         self.path = str(path)
-        self.conn = sqlite3.connect(self.path, check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
+        self.conn = _LockedConnection(self.path)
         try:
             self.conn.execute("PRAGMA journal_mode=WAL")
             self.conn.execute("PRAGMA busy_timeout=5000")

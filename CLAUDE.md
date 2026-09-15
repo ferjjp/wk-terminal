@@ -39,6 +39,8 @@ Terminal client for WaniKani (Python 3.13, Textual 8, uv). Installed as the `wk`
   Anki mode (`self.anki`): Input disabled from the start, Space reveals, 1/2 grade via `_apply_verdict(override=True)`.
   While a verdict is shown the Input is disabled so Enter / +/- / ctrl+z reach the screen bindings.
 - Do not define `_render` on widgets: it shadows Textual's `Widget._render`.
+- `Database.conn` is a `_LockedConnection`: one RLock, rows fetched eagerly. Workers and the UI thread share it;
+  a raw shared sqlite3 connection corrupts rows under concurrent cursors (seen as `json.loads(None)`).
 
 ## Testing
 

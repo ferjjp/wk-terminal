@@ -129,3 +129,28 @@ def test_popup_rotation_avoids_recent_nominations():
     # avoiding everything still returns something
     ids = [a["data"]["subject_id"] for a in db.reviews_available()]
     assert core.pick_popup_reviews(1, avoid=ids)
+
+
+def test_database_is_safe_across_threads():
+    import threading
+
+    core, api, db = make()
+    errors: list[BaseException] = []
+
+    def hammer(n: int) -> None:
+        try:
+            for _ in range(n):
+                for raw in db.search_subjects("水", limit=5):
+                    assert raw["data"]["level"] >= 1
+                db.subjects_at_level(1)
+                db.leeches()
+                db.reviews_available()
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=hammer, args=(150,)) for _ in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not errors, errors[:1]
