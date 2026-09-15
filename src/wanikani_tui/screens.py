@@ -1077,6 +1077,16 @@ class SessionScreen(Screen[list[Item]]):
                 msg.append("\nAccepted: " + ", ".join(fmt_reading(r, rtype) for r in s.accepted_readings) + want, style="bold")
             self._append_pitch(msg, s, part)
             self._append_breakdown(msg, s, part)
+            if part is Part.READING and s.type == "vocabulary" and typed.strip() and not override:
+                from .analyzer import analyze, reading_mixup
+
+                core = self.wk.core
+                kanji = core.subjects(s.component_ids)
+                asg = {k.id: a for k in kanji if (a := core.assignment_for(k.id))}
+                hint = reading_mixup(typed, s, kanji, analyze(s, kanji, asg))
+                if hint:
+                    msg.append("\n")
+                    msg.append(hint, style="yellow")
             if typed.strip() and not override:
                 from .confusion import guess
 

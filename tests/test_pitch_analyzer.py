@@ -78,3 +78,28 @@ def test_confusion_guess():
     out = guess(db, water, Part.READING, "いち")
     assert out and out[0][0].id == 11 and "looks similar" in out[0][1]
     assert guess(db, water, Part.MEANING, "zzzz") == []
+
+
+def test_reading_mixup_hint():
+    from wanikani_tui.analyzer import reading_mixup
+
+    mizu_k = K(8, "水", [("すい", "onyomi", True), ("みず", "kunyomi", False)])
+    v = V("水", "みず")
+    segs = analyze(v, [mizu_k], {})
+    assert reading_mixup("すい", v, [mizu_k], segs) == "すい is the on'yomi of 水; this word uses みず (kun'yomi)"
+    assert reading_mixup("か", v, [mizu_k], segs) is None
+    onna = K(9, "女", [("じょ", "onyomi", True), ("にょ", "onyomi", False), ("おんな", "kunyomi", False)])
+    ko = K(10, "子", [("し", "onyomi", True), ("こ", "kunyomi", False)])
+    v = V("女子", "じょし")
+    segs = analyze(v, [onna, ko], {})
+    hint = reading_mixup("おんなこ", v, [onna, ko], segs)
+    assert hint and hint.startswith("you combined 女 おんな (kun'yomi), 子 こ (kun'yomi)")
+
+
+def test_kanji_wrong_type_message():
+    from wanikani_tui.answers import Verdict, check_reading
+
+    water = K(8, "水", [("すい", "onyomi", True), ("みず", "kunyomi", False)])
+    water.data["readings"][1]["accepted_answer"] = False
+    r = check_reading("みず", water)
+    assert r.verdict is Verdict.RETRY and "kun'yomi" in r.message and "on'yomi" in r.message

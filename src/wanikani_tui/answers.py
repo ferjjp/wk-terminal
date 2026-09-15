@@ -131,5 +131,6 @@ def check_reading(answer: str, subject: Subject) -> Result:
         other = {wanakana.to_hiragana(r["reading"]): r.get("type") for r in subject.readings if not r.get("accepted_answer", True)}
         if norm in other:
             want = subject.primary_reading_type or "onyomi"
-            return Result(Verdict.RETRY, f"WaniKani wants the {want.replace('yomi', "'yomi")} reading")
+            typed_type = (other[norm] or "other").replace("yomi", "'yomi")
+            return Result(Verdict.RETRY, f"{kana} is the {typed_type} — WaniKani wants the {want.replace('yomi', "'yomi")} here")
     return Result(Verdict.INCORRECT)

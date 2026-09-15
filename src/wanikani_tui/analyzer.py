@@ -117,3 +117,45 @@ def analyze(vocab: Subject, kanji: list[Subject], assignments: dict[int, Assignm
         return None
 
     return solve(0, 0) or []
+
+
+def reading_mixup(typed: str, vocab: Subject, kanji: list[Subject], segs: list[Segment]) -> str | None:
+    """If a wrong vocabulary reading is really one of the kanji's other readings, say which and what the
+    word uses instead. Handles a single kanji word and a compound read with the other type throughout."""
+    typed = wanakana.to_hiragana(typed.strip())
+    if not typed or not segs:
+        return None
+    used = {seg.kanji.id: seg for seg in segs if seg.kanji is not None}
+    by_id = {k.id: k for k in kanji}
+
+    def rtype(r: dict) -> str:
+        return (r.get("type") or "reading").replace("yomi", "'yomi")
+
+    # single kanji: typed equals one of its other readings
+    for kid, seg in used.items():
+        k = by_id[kid]
+        for r in k.readings:
+            h = wanakana.to_hiragana(r["reading"])
+            if h == typed and h != seg.reading:
+                return f"{typed} is the {rtype(r)} of {k.characters}; this word uses {seg.reading} ({seg.label.replace(' (alternative)', '')})"
+    # compound: typed = concatenation of one reading per kanji, in order, with the okurigana kept
+    def build(i: int, acc: str, types: list[str]) -> list[str] | None:
+        if i == len(segs):
+            return types if acc == typed else None
+        seg = segs[i]
+        if seg.kanji is None:
+            return build(i + 1, acc + seg.reading, types) if typed.startswith(acc + seg.reading) else None
+        for r in seg.kanji.readings:
+            h = wanakana.to_hiragana(r["reading"])
+            for kana, _form in _variants(h):
+                if typed.startswith(acc + kana):
+                    out = build(i + 1, acc + kana, types + [f"{seg.kanji.characters} {kana} ({rtype(r)})"])
+                    if out is not None:
+                        return out
+        return None
+
+    parts = build(0, "", [])
+    if parts:
+        actual = "  ".join(f"{s.kanji.characters} {s.reading} ({s.label.replace(' (alternative)', '')})" for s in segs if s.kanji is not None)
+        return "you combined " + ", ".join(parts) + f" — this word is read {actual}"
+    return None
