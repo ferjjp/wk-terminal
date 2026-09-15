@@ -6,7 +6,7 @@ Terminal client for WaniKani (Python 3.13, Textual 8, uv). Installed as the `wk`
 
 ## Layout (src/wanikani_tui)
 
-- `cli.py` — argparse entry (`tui` default, `sync`, `due`, `pop`, `daemon`, `export`, `config`, `doctor`)
+- `cli.py` — argparse entry (`tui` default, `sync`, `due`, `today`, `pop`, `read`, `daemon`, `export`, `config`, `keys`, `doctor`)
 - `core.py` — service layer shared by every entry point: queues, submissions + retry queue, popup picker, stats, export
 - `api.py` / `db.py` / `sync.py` — WaniKani v2 client (rate limit + retry), SQLite cache (WAL), incremental sync
 - `models.py` — Subject/Assignment wrappers, SRS math, palettes
@@ -21,6 +21,8 @@ Terminal client for WaniKani (Python 3.13, Textual 8, uv). Installed as the `wk`
 - `pitch.py` — Kanjium accents table (CC BY-SA 4.0) fetched on demand; `describe()` renders morae + ꜜ
 - `analyzer.py` — vocabulary reading breakdown (which kanji reading, rendaku/sokuon/exception, known or not)
 - `confusion.py` — "confused with" guess on a wrong answer (subject JSON is ASCII-escaped: match `json.dumps(kana)`)
+- `reader.py` — `wk read`: kanji/vocab highlighting by SRS stage + unknown lists · `attention.py` — GNOME idle time
+  (org.gnome.Mutter.IdleMonitor) and DND (gsettings show-banners) for the daemon's `good_moment()`
 - `keys.py` — ACTIONS map (default key, where, what); every Binding goes through `key(action)`; `wk keys` lists them
 - `daemon.py` / `notify.py` — background sync + desktop notifications (D-Bus via jeepney on Linux; terminal-notifier
   on macOS) opening `wk pop` in a terminal window · `platform.py` — OS detection and defaults
@@ -39,6 +41,7 @@ Terminal client for WaniKani (Python 3.13, Textual 8, uv). Installed as the `wk`
   Anki mode (`self.anki`): Input disabled from the start, Space reveals, 1/2 grade via `_apply_verdict(override=True)`.
   While a verdict is shown the Input is disabled so Enter / +/- / ctrl+z reach the screen bindings.
 - Do not define `_render` on widgets: it shadows Textual's `Widget._render`.
+- WaniKani's GET /reviews returns nothing (server-side); daily counts/streak/heatmap use local `session_items`.
 - `Database.conn` is a `_LockedConnection`: one RLock, rows fetched eagerly. Workers and the UI thread share it;
   a raw shared sqlite3 connection corrupts rows under concurrent cursors (seen as `json.loads(None)`).
 

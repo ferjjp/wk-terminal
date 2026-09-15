@@ -44,6 +44,8 @@ wk pop                # one review (or one lesson) in a small window, then exit
 wk daemon             # background sync + desktop notifications (foreground)
 wk daemon install     # run it as a systemd user service, started with your session
 wk daemon status | uninstall
+wk read article.txt   # colour a Japanese text by what you know; list unknown kanji/words by level (stdin works too)
+wk today              # "today 32/50 reviews · streak 4 · 80 due · 5 lessons" for scripts and status lines
 wk export stats       # CSV: per-item accuracy + leech score (also: sessions, items, reviews; -o file.csv)
 wk config             # write ~/.config/wanikani/config.toml with all defaults
 wk keys               # every action with its current key; rebind under [keys] in the config
@@ -162,6 +164,11 @@ wk daemon install       # start it with your session (systemd user service / lau
 wk daemon status
 ```
 
+Reminders wait until you are actually at the keyboard (GNOME idle monitor, `only_when_active`)
+and stay quiet in do-not-disturb; the notification's **Later** button snoozes for an hour.
+With `[goal] reviews_per_day` set, the dashboard shows today's progress and your streak, and
+the daemon sends one extra nudge in the evening (`evening_nudge = "20:00"`) if the goal is unmet.
+
 Cadence, quiet hours, popup behaviour and the terminal command live under `[daemon]`
 in the config file; the daemon picks up changes without a restart.
 
@@ -201,6 +208,15 @@ For a due counter in the tmux status line:
 ```
 set -g status-right '#(wk due --format tmux) %H:%M'
 ```
+
+## Reading real text
+
+`wk read FILE` (or `cat FILE | wk read`) prints the text with every kanji coloured by your SRS
+stage (apprentice to burned), orange for WaniKani kanji you have not learned yet, red for kanji
+outside WaniKani, and WaniKani vocabulary underlined. Below it: a coverage percentage, the
+unlearned kanji sorted by WaniKani level with meaning and reading, and the WaniKani words in
+the text you have not learned. `--summary` skips the text, `--no-vocab` skips word matching.
+Handy for deciding whether an article or a page is readable yet.
 
 ## Community data
 

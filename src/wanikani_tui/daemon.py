@@ -187,10 +187,17 @@ def run(core: Core, once: bool = False) -> int:
         log.warning("no persistent notification listener; falling back to a 2-minute click window")
     current_nid = 0
 
+    snooze_until = datetime.min
+    nudged_on: str = ""
+
     def on_click(action: str) -> None:
+        nonlocal snooze_until
         log.info("notification answered: %r", action)
         if action in ("review", "default"):
             open_popup(cfg)
+        elif action == "later":
+            snooze_until = datetime.now() + timedelta(minutes=cfg.daemon_snooze_minutes)
+            log.info("snoozed until %s", snooze_until.strftime("%H:%M"))
 
     last_sync = datetime.min
     last_notify = datetime.min
@@ -218,21 +225,47 @@ def run(core: Core, once: bool = False) -> int:
         reviews, lessons, next_at = core.due_counts()
         want_reviews = reviews >= cfg.daemon_min_due
         want_lessons = cfg.daemon_notify_lessons and reviews == 0 and lessons > 0
-        if (want_reviews or want_lessons) and not in_quiet_hours(cfg) and now - last_notify >= timedelta(minutes=cfg.daemon_interval_minutes):
+        # evening nudge for the daily goal: once a day, ignores the interval but not quiet hours / attention
+        goal_due = False
+        if cfg.goal_reviews_per_day and cfg.goal_evening_nudge and nudged_on != now.strftime("%Y-%m-%d"):
+            try:
+                hh, mm = (int(x) for x in cfg.goal_evening_nudge.split(":"))
+                if (now.hour, now.minute) >= (hh, mm):
+                    st = core.db.goal_status(cfg.goal_reviews_per_day)
+                    goal_due = not st["met"] and reviews > 0
+            except ValueError:
+                pass
+        ready = (want_reviews or want_lessons) and now - last_notify >= timedelta(minutes=cfg.daemon_interval_minutes)
+        if (ready or goal_due) and not in_quiet_hours(cfg) and now >= snooze_until:
+            if cfg.daemon_only_when_active:
+                from .attention import good_moment
+
+                ok, why = good_moment(cfg.daemon_active_idle_seconds, cfg.daemon_respect_dnd)
+                if not ok:
+                    log.debug("holding the reminder: %s", why)
+                    if once:
+                        return 0
+                    time.sleep(60)
+                    continue
             last_notify = now
-            if want_reviews:
+            if goal_due:
+                nudged_on = now.strftime("%Y-%m-%d")
+            if goal_due:
+                st = core.db.goal_status(cfg.goal_reviews_per_day)
+                title, body = f"Daily goal: {st['today']}/{st['goal']} reviews", f"{st['goal'] - st['today']} to go today · streak {st['streak']} day{'s' if st['streak'] != 1 else ''}"
+            elif want_reviews:
                 title, body = f"{reviews} review{'s' if reviews != 1 else ''} waiting", "Open a quick review window?"
             else:
                 title, body = f"{lessons} lesson{'s' if lessons != 1 else ''} available", "Learn one new item?"
             icon, desc = notification_content(core)
-            if desc:
+            if desc and not goal_due:
                 body = desc
             if cfg.daemon_popup == "auto":
                 notify(title, "Opening a review window…", action=False, timeout_s=5, icon=icon)
                 open_popup(cfg)
             elif cfg.daemon_popup == "notify" and listening:
                 listener.close(current_nid)  # one live reminder at a time
-                current_nid = listener.send(title, body, [("default", "Review now"), ("review", "Review now"), ("later", "Later")],
+                current_nid = listener.send(title, body, [("default", "Review now"), ("review", "Review now"), ("later", f"Later ({cfg.daemon_snooze_minutes} min)")],
                                             on_click, icon=icon or "accessories-dictionary")
                 log.info("notification %s shown; clicks are handled whenever they come", current_nid)
             elif cfg.daemon_popup == "notify":

@@ -93,6 +93,16 @@ class DashboardScreen(Screen[None]):
         act.append(" lessons available")
         if reviews == 0 and next_at:
             act.append(f"\nnext review at {next_at.astimezone().strftime('%a %H:%M')}", style="dim")
+        st = db.goal_status(self.wk.core.cfg.goal_reviews_per_day)
+        if st["goal"]:
+            bar_w = 20
+            filled = min(bar_w, int(bar_w * st["today"] / st["goal"]))
+            act.append(f"\ntoday {st['today']}/{st['goal']}  ", style="bold" if st["met"] else "")
+            act.append("█" * filled, style="#2fbf5f" if st["met"] else "#ffa040")
+            act.append("░" * (bar_w - filled), style="dim")
+            act.append(f"  streak {st['streak']} day{'s' if st['streak'] != 1 else ''}", style="dim")
+        elif st["today"]:
+            act.append(f"\n{st['today']} reviews today · streak {st['streak']} day{'s' if st['streak'] != 1 else ''}", style="dim")
         pending = db.pending_count()
         if pending:
             act.append(f"\n{pending} submission(s) waiting to be sent — they go out on the next sync", style="bold yellow")

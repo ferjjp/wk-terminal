@@ -30,6 +30,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_d.add_argument("--test-popup", action="store_true", help="open the popup window exactly as a notification click would")
     sub.add_parser("config", help="create the config file with defaults and print its path")
     sub.add_parser("keys", help="list every action with its current key (rebind under [keys] in the config)")
+    p_r = sub.add_parser("read", help="colour a Japanese text by what you know and list the kanji/words you don't")
+    p_r.add_argument("file", nargs="?", default="-", help="file to read (default: stdin)")
+    p_r.add_argument("--top", type=int, default=30, help="rows per table")
+    p_r.add_argument("--no-vocab", action="store_true", help="kanji only, skip vocabulary matching")
+    p_r.add_argument("--summary", action="store_true", help="skip the highlighted text, print only the summary")
+    sub.add_parser("today", help="one line: reviews done today, goal, streak, due")
     p_x = sub.add_parser("export", help="CSV export of your history")
     p_x.add_argument("what", choices=["sessions", "items", "reviews", "stats"],
                      help="sessions: one row per session · items: every answer you gave · reviews: WaniKani's review log · stats: per-item accuracy + leech score")
@@ -130,6 +136,16 @@ def _main(argv: list[str] | None = None) -> int:
                     print("鰐 0" + (f" ({next_at.astimezone().strftime('%H:%M')})" if next_at else ""))
             else:
                 print(f"{reviews} reviews, {lessons} lessons" + (f"; next review {next_at.astimezone().strftime('%a %H:%M')}" if next_at and not reviews else ""))
+            return 0
+        if command == "read":
+            from . import reader
+
+            return reader.main(db, args.file, top=args.top, no_vocab=args.no_vocab, summary_only=args.summary)
+        if command == "today":
+            st = db.goal_status(settings().goal_reviews_per_day)
+            reviews, lessons, _ = core.due_counts()
+            goal = f"/{st['goal']}" if st["goal"] else ""
+            print(f"today {st['today']}{goal} reviews · streak {st['streak']} · {reviews} due · {lessons} lessons")
             return 0
         if command == "export":
             msg = core.export_csv(args.what, args.output)

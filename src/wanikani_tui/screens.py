@@ -27,6 +27,12 @@ if TYPE_CHECKING:
     from .app import WKApp
 
 
+def wanakana_hira(s: str) -> str:
+    import wanakana
+
+    return wanakana.to_hiragana(s)
+
+
 def _rel_time(ts: datetime | None) -> str:
     if ts is None:
         return "—"
@@ -265,7 +271,11 @@ class ReadingBreakdown(Static):
             elif seg.kind == "exception":
                 how += f", not built from {prim}"
             state = "learned" if seg.known else "not learned yet"
-            notes.append(Text.assemble((f"{k.characters} ", f"bold {seg.colour}"), (f"{seg.reading}: {how} · {state}", "dim")))
+            others = [f"{fmt_reading(r['reading'], r.get('type'))} ({r.get('type', '').replace('yomi', "'yomi")})"
+                      for r in k.readings if wanakana_hira(r["reading"]) != wanakana_hira(seg.reading)
+                      and wanakana_hira(r["reading"]) not in (seg.reading, seg.reading.rstrip("っ"))]
+            extra = ("   also " + ", ".join(others)) if others else ""
+            notes.append(Text.assemble((f"{k.characters} ", f"bold {seg.colour}"), (f"{seg.reading}: {how} · {state}", "dim"), (extra, "italic dim")))
         for n in notes:
             t.append("\n")
             t.append_text(n)

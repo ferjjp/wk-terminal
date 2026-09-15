@@ -646,6 +646,38 @@ class Database:
         row = self.conn.execute("SELECT id,data FROM study_materials WHERE subject_id=?", (subject_id,)).fetchone()
         return {"id": row["id"], "data": json.loads(row["data"])} if row else None
 
+    # -- daily goal ------------------------------------------------------------------
+
+    def reviews_per_local_day(self, days: int = 400) -> dict[str, int]:
+        """{YYYY-MM-DD local: completed review items} from local sessions (WaniKani's review log is empty)."""
+        from datetime import timedelta
+
+        since = (now_utc() - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        out: dict[str, int] = {}
+        for r in self.conn.execute(
+            "SELECT i.at FROM session_items i JOIN sessions s ON s.id=i.session_id WHERE s.mode='review' AND i.at >= ?", (since,)
+        ):
+            day = parse_ts(r["at"]).astimezone().strftime("%Y-%m-%d")
+            out[day] = out.get(day, 0) + 1
+        return out
+
+    def goal_status(self, per_day: int) -> dict[str, Any]:
+        """today's count, the goal, and the streak of consecutive days meeting it (any review when goal is 0)."""
+        from datetime import date, timedelta
+
+        counts = self.reviews_per_local_day()
+        today = date.today()
+        today_n = counts.get(today.isoformat(), 0)
+        need = max(1, per_day)
+        streak = 0
+        d = today
+        if counts.get(d.isoformat(), 0) < need:  # today not done yet: streak continues from yesterday
+            d = d - timedelta(days=1)
+        while counts.get(d.isoformat(), 0) >= need:
+            streak += 1
+            d = d - timedelta(days=1)
+        return {"today": today_n, "goal": per_day, "met": today_n >= per_day if per_day else today_n > 0, "streak": streak}
+
     # -- popup selection support ------------------------------------------------
 
     def recently_seen(self, hours: float = 1.0) -> set[int]:

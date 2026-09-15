@@ -114,6 +114,14 @@ popup_skip_recent_hours = 3  # never pop an item answered this recently (right o
 prefer = "reviews"           # reviews | lessons | mixed  (what a popup shows when both are available)
 # terminal = "ghostty --title=WaniKani -e"   # default: detected (ghostty, kitty, wezterm, …; Terminal.app on macOS)
 notify_lessons = false       # also notify when lessons are waiting and nothing is due
+only_when_active = true      # hold notifications while you are away from the keyboard (GNOME idle monitor)
+active_idle_seconds = 120    # "at the keyboard" means an input event within this many seconds
+respect_dnd = true           # stay quiet while the desktop is in do-not-disturb
+snooze_minutes = 60          # the notification's "Later" button postpones the next reminder this long
+
+[goal]
+reviews_per_day = 0          # daily review target shown on the dashboard (0 = off); streak counts days that met it
+evening_nudge = "20:00"      # one extra notification at this time if the goal is unmet ("" = off)
 
 [keys]
 # Any action can be rebound; `wk keys` lists them all with their current key.
@@ -160,6 +168,12 @@ class Settings:
     daemon_prefer: str = "reviews"
     daemon_terminal: str = ""  # empty = detect at runtime (see platform.default_terminal_command)
     daemon_notify_lessons: bool = False
+    daemon_only_when_active: bool = True
+    daemon_active_idle_seconds: float = 120.0
+    daemon_respect_dnd: bool = True
+    daemon_snooze_minutes: int = 60
+    goal_reviews_per_day: int = 0
+    goal_evening_nudge: str = "20:00"
     keys: dict[str, str] = field(default_factory=dict)
 
 
@@ -207,6 +221,12 @@ def settings() -> Settings:
     s.daemon_prefer = str(_get(raw, "daemon", "prefer", "reviews"))
     s.daemon_terminal = str(_get(raw, "daemon", "terminal", "") or "")
     s.daemon_notify_lessons = bool(_get(raw, "daemon", "notify_lessons", False))
+    s.daemon_only_when_active = bool(_get(raw, "daemon", "only_when_active", True))
+    s.daemon_active_idle_seconds = float(_get(raw, "daemon", "active_idle_seconds", 120))
+    s.daemon_respect_dnd = bool(_get(raw, "daemon", "respect_dnd", True))
+    s.daemon_snooze_minutes = int(_get(raw, "daemon", "snooze_minutes", 60))
+    s.goal_reviews_per_day = int(_get(raw, "goal", "reviews_per_day", 0))
+    s.goal_evening_nudge = str(_get(raw, "goal", "evening_nudge", "20:00") or "")
     s.keys = {str(k): str(v) for k, v in (raw.get("keys") or {}).items()}
     return s
 
