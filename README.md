@@ -44,7 +44,7 @@ wk pop                # one review (or one lesson) in a small window, then exit
 wk daemon             # background sync + desktop notifications (foreground)
 wk daemon install     # run it as a systemd user service, started with your session
 wk daemon status | uninstall
-wk read article.txt   # colour a Japanese text by what you know; list unknown kanji/words by level (stdin works too)
+wk read article.txt   # experimental: colour a plain-text Japanese file (or stdin) by what you know, list unknown kanji/words
 wk today              # "today 32/50 reviews · streak 4 · 80 due · 5 lessons" for scripts and status lines
 wk export stats       # CSV: per-item accuracy + leech score (also: sessions, items, reviews; -o file.csv)
 wk config             # write ~/.config/wanikani/config.toml with all defaults
@@ -209,7 +209,10 @@ For a due counter in the tmux status line:
 set -g status-right '#(wk due --format tmux) %H:%M'
 ```
 
-## Reading real text
+## Reading real text (experimental)
+
+Plain-text files or stdin only for now: no PDF, EPUB or HTML, and vocabulary matching is a
+simple longest-match without any grammar awareness, so treat the word lists as a rough guide.
 
 `wk read FILE` (or `cat FILE | wk read`) prints the text with every kanji coloured by your SRS
 stage (apprentice to burned), orange for WaniKani kanji you have not learned yet, red for kanji
