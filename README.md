@@ -164,8 +164,11 @@ wk daemon install       # start it with your session (systemd user service / lau
 wk daemon status
 ```
 
-Reminders wait until you are actually at the keyboard (GNOME idle monitor, `only_when_active`)
-and stay quiet in do-not-disturb; the notification's **Later** button snoozes for an hour.
+Reminders wait until you are actually at the keyboard (`only_when_active`) and stay quiet in
+do-not-disturb; the notification's **Later** button snoozes for an hour. Idle time comes from
+GNOME's idle monitor, KDE's screensaver interface, macOS IOKit, or `xprintidle` on X11; where
+none answers (sway, Hyprland…) the daemon just keeps the plain schedule. Do-not-disturb is read
+on GNOME only.
 With `[goal] reviews_per_day` set, the dashboard shows today's progress and your streak, and
 the daemon sends one extra nudge in the evening (`evening_nudge = "20:00"`) if the goal is unmet.
 
