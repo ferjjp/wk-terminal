@@ -28,11 +28,11 @@ def test_reader_no_kanji():
 
 def test_goal_and_streak():
     db = build_db(":memory:")
-    now = datetime.now(timezone.utc)
+    local_noon = datetime.now().astimezone().replace(hour=12, minute=0, second=0, microsecond=0)
 
     def day(n_days_ago, count):
         sid = db.begin_session("review")
-        at = (now - timedelta(days=n_days_ago)).replace(hour=12)
+        at = (local_noon - timedelta(days=n_days_ago)).astimezone(timezone.utc)  # noon local, whatever the UTC date
         for i in range(count):
             db.conn.execute(
                 "INSERT INTO session_items(session_id,subject_id,subject_type,incorrect_meaning,incorrect_reading,old_stage,new_stage,at)"
