@@ -132,9 +132,10 @@ class DashboardScreen(Screen[None]):
         if ls.get("days_on_level") is not None:
             prog.append(f"\n{ls['days_on_level']:.1f} days on this level", style="dim")
             if ls.get("median_days"):
+                prog.append(f" · median {ls['median_days']:.1f} d/level", style="dim")
                 proj = ls["projected"]
-                when = proj.astimezone().strftime("%b %d") if proj else "?"
-                prog.append(f" · median {ls['median_days']:.1f} d/level · projected level-up {when}", style="dim")
+                if proj and proj > datetime.now(proj.tzinfo):
+                    prog.append(f" · projected level-up {proj.astimezone().strftime('%b %d')}", style="dim")
         self.query_one("#progress", Panel).update(prog)
 
         srs = Text()
@@ -301,8 +302,9 @@ class StatsScreen(Screen[None]):
             lv.append(f" · {ls['days_on_level']:.1f} days so far")
         if ls.get("levels_done"):
             lv.append(f"\n{ls['levels_done']} levels completed in {ls['total_days']:.0f} days · median {ls['median_days']:.1f} days per level")
-            if ls.get("projected"):
+            if ls.get("projected") and ls["projected"] > datetime.now(ls["projected"].tzinfo):
                 lv.append(f"\nProjected level-up: {ls['projected'].astimezone().strftime('%a %b %d')}")
+            if ls.get("projected"):
                 remaining = 60 - ls["level"]
                 lv.append(f" · level 60 in about {remaining * ls['median_days'] / 30:.0f} months at this pace", style="dim")
         self.query_one("#levels", Panel).update(lv)

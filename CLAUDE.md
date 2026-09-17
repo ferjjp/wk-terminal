@@ -1,4 +1,7 @@
-# wanikani-tui
+# wk-terminal
+
+Distribution name `wk-terminal` (PyPI), import package `wanikani_tui`, command `wk`; data/config dirs keep the
+old `wanikani-tui` / `wanikani` names.
 
 Terminal client for WaniKani (Python 3.13, Textual 8, uv). Installed as the `wk` command via
 `uv tool install --editable .` — code edits are live, but **new dependencies need
@@ -53,3 +56,5 @@ Terminal client for WaniKani (Python 3.13, Textual 8, uv). Installed as the `wk`
 - `uv run python tests/pty_capture.py "r,a,enter" out.bin` — runs the app in a pty and lists kitty-graphics
   commands against painted placeholder cells; use this for any image bug before theorising
 - Set `WK_IMAGES=none|unicode` for headless runs.
+- `scripts/make_screenshots.py docs/` regenerates README images from a temp COPY of the cache (username → demo,
+  read-only API stub); it fixes Rich's SVG `textLength` for CJK and composites the real kanji bitmaps.

@@ -1,9 +1,22 @@
 # wk-terminal
 
+[![PyPI](https://img.shields.io/pypi/v/wk-terminal)](https://pypi.org/project/wk-terminal/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue)
+
 WaniKani in your terminal: dashboard, item browser, reviews and lessons, with kanji and
 radical images drawn through the kitty graphics protocol (ghostty, kitty, WezTerm…),
 plus a background daemon that nudges you with desktop notifications and opens a small
 review window.
+
+![A vocabulary review: the kanji as an image, pitch accent and per-kanji readings in the feedback](https://raw.githubusercontent.com/ferjjp/wk-terminal/master/docs/review-feedback.png)
+
+| | |
+|---|---|
+| ![Dashboard with level progress, SRS distribution and a forecast coloured by SRS stage](https://raw.githubusercontent.com/ferjjp/wk-terminal/master/docs/dashboard.png) | ![Vocabulary page with pitch accent and a reading breakdown](https://raw.githubusercontent.com/ferjjp/wk-terminal/master/docs/vocab-page.png) |
+| ![Kanji page: phonetic-semantic composition and extra look-alikes](https://raw.githubusercontent.com/ferjjp/wk-terminal/master/docs/kanji-page-composition.png) | ![wk read: a Japanese text coloured by what you know](https://raw.githubusercontent.com/ferjjp/wk-terminal/master/docs/reader.png) |
+
+Unofficial; uses the official WaniKani API with your own token.
 
 ## Setup
 
@@ -23,10 +36,11 @@ review window.
 3. Install the `wk` command:
 
    ```sh
-   uv tool install git+https://github.com/ferjjp/wk-terminal.git
+   uv tool install wk-terminal          # from PyPI (pipx install wk-terminal works too)
+   uv tool install git+https://github.com/ferjjp/wk-terminal.git   # or straight from GitHub
    ```
 
-   or, from a clone, `uv tool install --editable .` so edits are picked up live.
+   From a clone, `uv tool install --editable .` picks up edits live.
 
 The first start downloads every subject (~10 requests) into
 `~/.local/share/wanikani-tui/cache.sqlite3`. Later starts sync incrementally in the
@@ -260,6 +274,7 @@ uv run pytest                        # answer checking, SRS math, queue, core/re
 uv run python tests/drive.py out/    # drive the main screens headlessly, saves PNG screenshots
 uv run python tests/drive2.py out/   # stats, picker, filters, synonyms, strokes, undo, popup
 uv run python tests/pty_capture.py "r,a,enter" out.bin   # kitty-graphics traffic vs painted cells
+uv run python scripts/make_screenshots.py docs/          # README screenshots from a temp copy of your cache
 ```
 
 ## Licence and credits

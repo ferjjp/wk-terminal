@@ -1,5 +1,5 @@
 [project]
-name = "wanikani-tui"
+name = "wk-terminal"
 version = "0.1.0"
 description = "WaniKani in your terminal: reviews, lessons and kanji images via the kitty graphics protocol, plus a notification daemon"
 readme = "README.md"
@@ -28,6 +28,11 @@ dependencies = [
     "wanakana-python>=1.2.2",
 ]
 
+[project.urls]
+Homepage = "https://github.com/ferjjp/wk-terminal"
+Repository = "https://github.com/ferjjp/wk-terminal"
+Issues = "https://github.com/ferjjp/wk-terminal/issues"
+
 [project.scripts]
 wk = "wanikani_tui.cli:main"
 
@@ -39,3 +44,6 @@ build-backend = "uv_build"
 dev = [
     "pytest>=9.1.1",
 ]
+
+[tool.uv.build-backend]
+module-name = "wanikani_tui"
