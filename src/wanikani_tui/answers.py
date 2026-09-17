@@ -117,7 +117,9 @@ def check_meaning(answer: str, subject: Subject) -> Result:
     return Result(Verdict.INCORRECT)
 
 
-def check_reading(answer: str, subject: Subject) -> Result:
+def check_reading(answer: str, subject: Subject, components: list[Subject] | None = None) -> Result:
+    """`components` are the kanji inside a vocabulary word; for a single-kanji word, typing that kanji's
+    other reading gets a retry with a hint (as on the site) instead of a wrong mark."""
     kana = to_kana_final(answer)
     if not kana:
         return Result(Verdict.RETRY, "Type an answer")
@@ -133,4 +135,13 @@ def check_reading(answer: str, subject: Subject) -> Result:
             want = subject.primary_reading_type or "onyomi"
             typed_type = (other[norm] or "other").replace("yomi", "'yomi")
             return Result(Verdict.RETRY, f"{kana} is the {typed_type} — WaniKani wants the {want.replace('yomi', "'yomi")} here")
+    if subject.type == "vocabulary" and components and subject.characters and len(subject.characters) == 1:
+        k = next((c for c in components if c.characters == subject.characters), None)
+        if k is not None:
+            for r in k.readings:
+                if wanakana.to_hiragana(r["reading"]) == norm:
+                    typed_type = (r.get("type") or "other").replace("yomi", "'yomi")
+                    used = next((x.get("type") for x in k.readings if wanakana.to_hiragana(x["reading"]) in accepted), None)
+                    want = (used or "other").replace("yomi", "'yomi")
+                    return Result(Verdict.RETRY, f"{kana} is the {typed_type} of {k.characters} — this word uses the {want} reading")
     return Result(Verdict.INCORRECT)

@@ -1031,7 +1031,11 @@ class SessionScreen(Screen[list[Item]]):
         item, part = self.current
         s = item.subject
         typed = event.value
-        result = check_meaning(typed, s) if part is Part.MEANING else check_reading(typed, s)
+        if part is Part.MEANING:
+            result = check_meaning(typed, s)
+        else:
+            comps = self.wk.core.subjects(s.component_ids) if s.type == "vocabulary" and len(s.characters or "") == 1 else None
+            result = check_reading(typed, s, comps)
         fb = self.query_one("#feedback", Static)
         box = self.query_one("#answer", Input)
         if result.verdict is Verdict.RETRY:

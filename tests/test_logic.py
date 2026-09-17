@@ -90,3 +90,18 @@ def test_kana_live_incomplete_syllables():
     for ch in "ra-men":
         seq = to_kana_live(seq + ch)
     assert to_kana_final(seq) == "らーめん"
+
+
+def test_single_kanji_vocab_other_reading_is_a_retry():
+    from wanikani_tui.models import Subject
+
+    fire_k = Subject(500, "kanji", {"level": 2, "slug": "火", "characters": "火", "meanings": [{"meaning": "Fire", "primary": True, "accepted_answer": True}],
+                                   "readings": [{"reading": "か", "type": "onyomi", "primary": True, "accepted_answer": True},
+                                                {"reading": "ひ", "type": "kunyomi", "primary": False, "accepted_answer": False}]})
+    fire_v = Subject(501, "vocabulary", {"level": 2, "slug": "火", "characters": "火", "meanings": [{"meaning": "Fire", "primary": True, "accepted_answer": True}],
+                                        "readings": [{"reading": "ひ", "primary": True, "accepted_answer": True}], "component_subject_ids": [500]})
+    r = check_reading("ka", fire_v, [fire_k])
+    assert r.verdict is Verdict.RETRY and "on'yomi of 火" in r.message and "kun'yomi" in r.message
+    assert check_reading("hi", fire_v, [fire_k]).verdict is Verdict.CORRECT
+    assert check_reading("ku", fire_v, [fire_k]).verdict is Verdict.INCORRECT
+    assert check_reading("ka", fire_v).verdict is Verdict.INCORRECT  # without component info: plain wrong, as before
