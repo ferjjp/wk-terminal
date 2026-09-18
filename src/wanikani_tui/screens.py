@@ -177,7 +177,7 @@ class SubjectDetail(VerticalScroll):
         hints = []
         if s.audio_urls:
             hints.append(f"[{key('audio')}] audio")
-        if s.is_kanji:
+        if any(0x4E00 <= ord(c) <= 0x9FFF for c in (s.characters or "")):
             hints.append(f"[{key('strokes')}] stroke order")
         hints += [f"[{key('synonym')}] add synonym", f"[{key('note')}] note", f"[{key('related')}] related", f"[{key('open')}] browser"]
         meta.append("\n" + "  ".join(hints), style="dim")
@@ -519,6 +519,7 @@ class StrokeScreen(ModalScreen[None]):
     StrokeScreen { align: center middle; }
     StrokeScreen > Vertical { width: 72; height: auto; border: thick $primary; background: $surface; padding: 1 2; align: center middle; }
     StrokeScreen .wk-image { width: auto; height: 18; }  /* an auto-width image needs a sized container, or it collapses to 0 cells */
+    StrokeScreen #hint { color: $text-muted; }
     """
     BINDINGS = [Binding("escape", "close", "Close"), Binding("s", "close", "Close", show=False)]
 
@@ -527,10 +528,22 @@ class StrokeScreen(ModalScreen[None]):
         self.subject = subject
 
     def compose(self) -> ComposeResult:
-        with Vertical():
+        from .reader import is_kanji
+
+        self.kanji_chars = [c for c in (self.subject.characters or "") if is_kanji(c) and c != "々"]
+        n = max(1, len(self.kanji_chars))
+        with Vertical() as box:
+            # widen the box for multi-kanji words, but stay inside the terminal; shrink the rows to keep the aspect
+            cols_per = 36
+            avail = max(30, self.app.size.width - 6)
+            if n * cols_per + 6 > avail:
+                cols_per = max(12, (avail - 6) // n)
+            box.styles.width = min(avail, n * cols_per + 6 + (n - 1) * 2)
             yield Static(Text(f"Stroke order · {self.subject.characters}", style="bold"))
             if ImageWidget is not None:
-                yield ImageWidget(None, classes="wk-image", id="strokes")
+                img = ImageWidget(None, classes="wk-image", id="strokes")
+                img.styles.height = max(6, cols_per // 2)
+                yield img
             yield Static(Text("loading from KanjiVG…", style="dim"), id="note")
 
     def on_mount(self) -> None:
@@ -538,15 +551,16 @@ class StrokeScreen(ModalScreen[None]):
 
     @work(thread=True)
     def _load(self) -> None:
-        from .images import stroke_image
+        from .images import strokes_for_word
 
         app: WKApp = self.app  # type: ignore[assignment]
-        img = stroke_image(self.subject.characters or "", app.core.fetch_bytes)
+        img = strokes_for_word(self.subject.characters or "", app.core.fetch_bytes) if self.kanji_chars else None
         if img is None or ImageWidget is None:
-            self.app.call_from_thread(self.query_one("#note", Static).update, Text("No stroke data available", style="red"))
+            self.app.call_from_thread(self.query_one("#note", Static).update, Text("No stroke data available for this item", style="red"))
             return
         self.app.call_from_thread(setattr, self.query_one("#strokes"), "image", img)
-        self.app.call_from_thread(self.query_one("#note", Static).update, Text("Strokes numbered in drawing order · data: KanjiVG (CC BY-SA)", style="dim"))
+        label = "Strokes numbered in drawing order" + (f" · {len(self.kanji_chars)} kanji, left to right" if len(self.kanji_chars) > 1 else "")
+        self.app.call_from_thread(self.query_one("#note", Static).update, Text(label + " · data: KanjiVG (CC BY-SA)", style="dim"))
 
     def action_close(self) -> None:
         self.dismiss()
@@ -597,10 +611,12 @@ class SubjectScreen(Screen[None]):
         self.wk.play_audio(self.subject)
 
     def action_strokes(self) -> None:
-        if self.subject.is_kanji and self.subject.characters:
+        from .reader import is_kanji
+
+        if any(is_kanji(c) for c in (self.subject.characters or "")):
             self.app.push_screen(StrokeScreen(self.subject))
         else:
-            self.notify("Stroke order is available for kanji")
+            self.notify("No kanji in this item, so no stroke order")
 
     def action_synonym(self) -> None:
         def save(text: str | None) -> None:
@@ -1585,9 +1601,13 @@ class LessonScreen(Screen[None]):
         self.wk.play_audio(self.items[self.index].subject)
 
     def action_strokes(self) -> None:
+        from .reader import is_kanji
+
         s = self.items[self.index].subject
-        if s.is_kanji and s.characters:
+        if any(is_kanji(c) for c in (s.characters or "")):
             self.app.push_screen(StrokeScreen(s))
+        else:
+            self.notify("No kanji in this item, so no stroke order")
 
     def on_key(self, event) -> None:
         if event.key == "enter":  # Enter = next item, and on the last item = start the quiz

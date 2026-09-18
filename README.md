@@ -103,7 +103,7 @@ Every key below can be changed under `[keys]` in the config file.
 | Key | Action |
 |---|---|
 | `a` | Play audio (vocabulary) |
-| `s` | Stroke order (kanji) |
+| `s` | Stroke order: the kanji, or every kanji in a word side by side |
 | | Kanji also show their composition (Keisei: phonetic mark, expected reading, quality 天上中下) and extra look-alikes (Niai) |
 | | Vocabulary shows its pitch accent and a reading breakdown: which reading each kanji contributes, coloured by whether it is a reading you know, a sound change (rendaku, sokuon) or an exception |
 | `y` | Add a meaning synonym to your account |

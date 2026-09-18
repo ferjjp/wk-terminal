@@ -136,3 +136,25 @@ def stroke_image(char: str, fetch, px: int = 320) -> Image.Image | None:
     ImageDraw.Draw(box).rounded_rectangle((0, 0, box.width - 1, box.height - 1), radius=pad, fill=(40, 40, 48, 255))
     box.alpha_composite(png, (pad, pad))
     return box
+
+
+def strokes_for_word(word: str, fetch, px: int = 320, gap: int = 24) -> Image.Image | None:
+    """Stroke diagrams for every kanji in a word, side by side (vocabulary pages)."""
+    chars = [c for c in word if 0x4E00 <= ord(c) <= 0x9FFF or 0x3400 <= ord(c) <= 0x4DBF]
+    panels = []
+    for c in chars:
+        img = stroke_image(c, fetch, px=px)
+        if img is not None:
+            panels.append(img)
+    if not panels:
+        return None
+    if len(panels) == 1:
+        return panels[0]
+    w = sum(p.width for p in panels) + gap * (len(panels) - 1)
+    h = max(p.height for p in panels)
+    out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    x = 0
+    for p in panels:
+        out.alpha_composite(p, (x, (h - p.height) // 2))
+        x += p.width + gap
+    return out
