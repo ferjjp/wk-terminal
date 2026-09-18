@@ -59,7 +59,7 @@ pump(2.5)
 marks = []
 for i, key in enumerate(KEYS.split(",")):
     marks.append((key, len(buf)))
-    os.write(fd, key.encode() if len(key) == 1 else {"enter": b"\r", "esc": b"\x1b"}[key])
+    os.write(fd, key.encode() if len(key) == 1 else {"enter": b"\r", "esc": b"\x1b", "down": b"\x1b[B", "up": b"\x1b[A"}[key])
     pump(1.5)
 os.write(fd, b"\x11")  # ctrl+q
 pump(1.0)

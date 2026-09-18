@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import os
+import tempfile
 import sys
 from pathlib import Path
 
 os.environ.setdefault("WK_IMAGES", "unicode")
+os.environ["XDG_DATA_HOME"] = tempfile.mkdtemp(prefix="wk-drive-")  # never write fixture data into the real cache
 sys.path.insert(0, str(Path(__file__).parent))
 
 import resvg_py
