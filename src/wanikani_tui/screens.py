@@ -517,8 +517,8 @@ class TextPrompt(ModalScreen[str | None]):
 class StrokeScreen(ModalScreen[None]):
     DEFAULT_CSS = """
     StrokeScreen { align: center middle; }
-    StrokeScreen > Vertical { width: auto; height: auto; border: thick $primary; background: $surface; padding: 1 2; align: center middle; }
-    StrokeScreen .wk-image { width: auto; height: 16; }
+    StrokeScreen > Vertical { width: 72; height: auto; border: thick $primary; background: $surface; padding: 1 2; align: center middle; }
+    StrokeScreen .wk-image { width: auto; height: 18; }  /* an auto-width image needs a sized container, or it collapses to 0 cells */
     """
     BINDINGS = [Binding("escape", "close", "Close"), Binding("s", "close", "Close", show=False)]
 
