@@ -1565,7 +1565,7 @@ class LessonScreen(Screen[None]):
         builds_on = [self.items[j].subject for j in range(index) if self.items[j].subject.id in s.component_ids]
         hint = ("   builds on " + " ".join(b.display_chars for b in builds_on)) if builds_on else ""
         self.query_one("#nav", Static).update(
-            f"{label} {index + 1}/{len(self.items)}{hint}   ←/→ navigate   " + ("→ or Enter: start quiz" if last else "")
+            f"{label} {index + 1}/{len(self.items)}{hint}   ←/→ or Enter to navigate   " + ("Enter: start quiz" if last else "")
             + ("   [F2 open full WaniKani]" if self.popup else "")
         )
         if s.is_vocab and s.audio_urls and settings().lessons_audio_autoplay:
@@ -1590,8 +1590,9 @@ class LessonScreen(Screen[None]):
             self.app.push_screen(StrokeScreen(s))
 
     def on_key(self, event) -> None:
-        if event.key == "enter" and self.index == len(self.items) - 1:
-            self.start_quiz()
+        if event.key == "enter":  # Enter = next item, and on the last item = start the quiz
+            event.stop()
+            self.action_next()
 
     def start_quiz(self) -> None:
         def close(_: object) -> None:

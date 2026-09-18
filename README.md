@@ -138,7 +138,7 @@ A submission that fails to reach WaniKani is queued and sent on the next sync.
 | Key | Action |
 |---|---|
 | `→` `←` (or `l` `h`) | Next / previous item |
-| `Enter` | On the last item: start the quiz |
+| `Enter` | Next item; on the last item, start the quiz |
 | `a` | Play audio |
 | `s` | Stroke order |
 | `Esc` | Leave lessons (nothing is recorded until the quiz) |
