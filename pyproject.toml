@@ -1,6 +1,6 @@
 [project]
 name = "wk-terminal"
-version = "0.1.0"
+version = "0.1.1"
 description = "WaniKani in your terminal: reviews, lessons and kanji images via the kitty graphics protocol, plus a notification daemon"
 readme = "README.md"
 license = "MIT"
