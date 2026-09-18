@@ -282,13 +282,18 @@ class StatsScreen(Screen[None]):
         correct = sum(v[1] for v in per_day.values())
         days = len([1 for v in per_day.values() if v[0]])
         heat.append(f"\n{total} reviews on {days} days" + (f" · {100 * correct // total}% fully correct" if total else ""), style="dim")
+        heat.append("\ncounts reviews done in wk-terminal; WaniKani's API does not expose review history", style="dim italic")
         self.query_one("#heat", Panel).update(heat)
 
         acc = Text()
-        for t, (mc, mi, rc, ri) in sorted(db.accuracy_by_type().items()):
-            acc.append(f"{t:<16}", style=f"bold {TYPE_COLOR.get(t, 'white')}")
+        by_type = db.accuracy_by_type()
+        for t in ("radical", "kanji", "vocabulary", "kana_vocabulary"):
+            if t not in by_type:
+                continue
+            mc, mi, rc, ri = by_type[t]
+            acc.append(f"{t.replace('_', ' '):<16}", style=f"bold {TYPE_COLOR.get(t, 'white')}")
             acc.append(f"meaning {100 * mc // max(1, mc + mi):>3}%  ({mc + mi} answers)")
-            if rc + ri:
+            if t in ("kanji", "vocabulary") and rc + ri:  # radicals and kana words have no reading question
                 acc.append(f"   reading {100 * rc // max(1, rc + ri):>3}%  ({rc + ri} answers)")
             acc.append("\n")
         if not acc.plain:
@@ -300,19 +305,26 @@ class StatsScreen(Screen[None]):
         lv.append(f"Level {ls['level']}", style="bold")
         if ls.get("days_on_level") is not None:
             lv.append(f" · {ls['days_on_level']:.1f} days so far")
+        elif ls.get("unlocked_at"):
+            lv.append(f" · unlocked {ls['unlocked_at'].astimezone().strftime('%b %d')}, no lessons started yet", style="dim")
         if ls.get("levels_done"):
-            lv.append(f"\n{ls['levels_done']} levels completed in {ls['total_days']:.0f} days · median {ls['median_days']:.1f} days per level")
-            if ls.get("projected") and ls["projected"] > datetime.now(ls["projected"].tzinfo):
-                lv.append(f"\nProjected level-up: {ls['projected'].astimezone().strftime('%a %b %d')}")
-            if ls.get("projected"):
+            lv.append(f"\n{ls['levels_done']} level{'s' if ls['levels_done'] != 1 else ''} completed in {ls['total_days']:.0f} days"
+                      f" · median {ls['median_days']:.1f} days per level · last level {ls['last_level_days']:.0f} days")
+            proj = ls.get("projected")
+            if proj and proj > datetime.now(proj.tzinfo):
+                lv.append(f"\nProjected level-up: {proj.astimezone().strftime('%a %b %d')}")
+            if ls["median_days"] <= 180:  # beyond that a "level 60 in N years" line is noise, not information
                 remaining = 60 - ls["level"]
-                lv.append(f" · level 60 in about {remaining * ls['median_days'] / 30:.0f} months at this pace", style="dim")
+                lv.append(f"\nLevel 60 in about {remaining * ls['median_days'] / 30:.0f} months at the median pace", style="dim")
         self.query_one("#levels", Panel).update(lv)
 
         table = self.query_one("#sessions", DataTable)
         table.add_columns("When", "Mode", "Items", "Correct")
-        for s in db.recent_sessions(20):
-            when = s["started_at"][:16].replace("T", " ")
+        from .db import parse_ts
+
+        for s in [x for x in db.recent_sessions(60) if x["items"]][:20]:
+            ts = parse_ts(s["started_at"])
+            when = ts.astimezone().strftime("%Y-%m-%d %H:%M") if ts else s["started_at"][:16]
             n, c = s["items"] or 0, s["correct"] or 0
             table.add_row(when, s["mode"], str(n), f"{100 * c // n}%" if n else "—")
 

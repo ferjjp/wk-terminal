@@ -373,8 +373,15 @@ class Core:
             if p.get("level") == level and started and not passed:
                 current_started = started
         recent = sorted(durations[-10:])
-        median = recent[len(recent) // 2] if recent else None
+        median = None
+        if recent:
+            mid = len(recent) // 2
+            median = recent[mid] if len(recent) % 2 else (recent[mid - 1] + recent[mid]) / 2
         days_on_level = (now_utc() - current_started).total_seconds() / 86400 if current_started else None
+        current_unlocked = None
+        for p in progs:
+            if p.get("level") == level and not p.get("abandoned_at") and parse_ts(p.get("unlocked_at")):
+                current_unlocked = parse_ts(p.get("unlocked_at"))
         projected = None
         if median is not None and current_started is not None:
             from datetime import timedelta
@@ -382,7 +389,8 @@ class Core:
             projected = current_started + timedelta(days=median)
         return {
             "level": level, "days_on_level": days_on_level, "median_days": median, "levels_done": len(durations),
-            "projected": projected, "total_days": sum(durations),
+            "projected": projected, "total_days": sum(durations), "last_level_days": durations[-1] if durations else None,
+            "unlocked_at": current_unlocked, "started": current_started is not None,
         }
 
     # -- export -------------------------------------------------------------------
