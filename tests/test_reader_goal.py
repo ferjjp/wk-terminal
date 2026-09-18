@@ -61,3 +61,20 @@ def test_good_moment(monkeypatch):
     assert attention.good_moment(120)[0] is True
     monkeypatch.setattr(attention, "do_not_disturb", lambda: True)
     assert attention.good_moment(120, respect_dnd=False)[0] is True
+
+
+def test_save_setting_keeps_comments(tmp_path, monkeypatch):
+    from wanikani_tui import config
+
+    f = tmp_path / "config.toml"
+    f.write_text('[review]\nanki = false   # keep me\n\n[ui]\ntheme = "textual-dark"       # any Textual theme\nvim_keys = true\n\n[daemon]\nsync_minutes = 10\n')
+    monkeypatch.setattr(config, "config_file", lambda: f)
+    config.save_setting("ui", "theme", "nord")
+    text = f.read_text()
+    assert 'theme = "nord"  # any Textual theme' in text and "# keep me" in text and "sync_minutes = 10" in text
+    config.save_setting("goal", "evening_nudge", "21:00")   # new section appended
+    assert "[goal]\nevening_nudge = \"21:00\"" in f.read_text()
+    config.save_setting("ui", "compact", "true")            # new key inside an existing section
+    assert 'compact = "true"' in f.read_text().split("[daemon]")[0]
+    import tomllib
+    tomllib.loads(f.read_text())

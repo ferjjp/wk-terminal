@@ -353,6 +353,7 @@ class WKApp(App[str | None]):
             self.theme = cfg.ui_theme
         except Exception:  # noqa: BLE001 - unknown theme name
             self.notify(f"Unknown theme {cfg.ui_theme!r}; using the default", severity="warning")
+        self._theme_ready = True
         if self.popup:
             self._start_popup()
             return
@@ -392,6 +393,19 @@ class WKApp(App[str | None]):
             self.push_screen(SessionScreen("review", items, popup=True), done)
         else:
             self.push_screen(LessonScreen(items, popup=True), done)
+
+    def watch_theme(self, theme: str) -> None:
+        """A theme picked in the command palette is saved to config.toml so it survives a restart."""
+        if not getattr(self, "_theme_ready", False) or not theme or theme == self.core.cfg.ui_theme:
+            return
+        try:
+            from .config import save_setting
+
+            save_setting("ui", "theme", theme)
+            self.core.cfg.ui_theme = theme
+            self.notify(f"Theme saved: {theme}", timeout=2)
+        except Exception as exc:  # noqa: BLE001
+            self.notify(f"Could not save the theme: {exc}", severity="warning")
 
     def image_rows(self) -> int:
         return max(2, self.core.cfg.images_height)

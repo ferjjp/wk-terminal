@@ -237,3 +237,32 @@ def write_default_config() -> Path:
     if not f.exists():
         f.write_text(DEFAULT_CONFIG)
     return f
+
+
+def save_setting(section: str, key: str, value: str) -> None:
+    """Persist one key in config.toml, keeping the rest of the file (and its comments) untouched."""
+    import re
+
+    f = config_file()
+    if not f.exists():
+        write_default_config()
+    text = f.read_text()
+    line = f'{key} = "{value}"'
+    sec = re.search(rf"(?m)^\[{re.escape(section)}\]\s*$", text)
+    if sec:
+        start = sec.end()
+        nxt = re.search(r"(?m)^\[", text[start:])
+        end = start + nxt.start() if nxt else len(text)
+        body = text[start:end]
+        pat = re.compile(rf"(?m)^{re.escape(key)}\s*=\s*[^\n#]*(#.*)?$")
+        m = pat.search(body)
+        if m:
+            comment = f"  {m.group(1)}" if m.group(1) else ""
+            body = body[:m.start()] + line + comment + body[m.end():]
+        else:
+            body = body.rstrip("\n") + f"\n{line}\n\n"
+        text = text[:start] + body + text[end:]
+    else:
+        text = text.rstrip("\n") + f"\n\n[{section}]\n{line}\n"
+    f.write_text(text)
+    settings.cache_clear()

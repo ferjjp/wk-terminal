@@ -161,7 +161,8 @@ vocabulary; the footer says what each item builds on.
 lightning mode, review order (`random`, `level`, `back_to_back`), mnemonic on a miss,
 audio autoplay, lesson batch size, image height, theme (any Textual theme, e.g.
 `textual-light`, `tokyo-night`), colour-blind SRS palette, vim keys, compact layout,
-and the daemon's cadence, quiet hours, popup behaviour and terminal command.
+and the daemon's cadence, quiet hours, popup behaviour and terminal command. A theme picked
+in the command palette (`Ctrl+P`, "change theme") is saved back to the config file.
 
 ## Daemon
 
