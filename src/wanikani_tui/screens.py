@@ -886,11 +886,13 @@ class SessionScreen(Screen[list[Item]]):
         Binding(key("leave"), "leave", "Wrap up / quit"),
         Binding(key("info"), "info", "Info"),
         Binding(key("undo"), "undo", "Undo"),
-        Binding(key("mark_correct"), "mark_correct", "Accept", show=False, priority=True),
-        Binding(key("mark_incorrect"), "mark_incorrect", "Reject", show=False, priority=True),
-        Binding(key("anki_reveal"), "anki_reveal", "Reveal", show=False, priority=True),
-        Binding(key("anki_correct"), "anki_correct", "Knew it", show=False, priority=True),
-        Binding(key("anki_incorrect"), "anki_incorrect", "Didn't know", show=False, priority=True),
+        # not priority bindings: while you type, the answer box must get every key (a "-" makes ー, digits and
+        # spaces belong in meanings); once a verdict shows or in Anki mode the box is disabled, so these reach us
+        Binding(key("mark_correct"), "mark_correct", "Accept", show=False),
+        Binding(key("mark_incorrect"), "mark_incorrect", "Reject", show=False),
+        Binding(key("anki_reveal"), "anki_reveal", "Reveal", show=False),
+        Binding(key("anki_correct"), "anki_correct", "Knew it", show=False),
+        Binding(key("anki_incorrect"), "anki_incorrect", "Didn't know", show=False),
         Binding(key("anki_toggle"), "anki_toggle", "Anki mode", show=False),
         Binding("enter", "continue", "Continue", show=False),
         Binding(key("full_app"), "full_app", "Open full WaniKani"),

@@ -373,7 +373,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/7f/e1/8894b11cfb4642e97
 
 [[package]]
 name = "wk-terminal"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
