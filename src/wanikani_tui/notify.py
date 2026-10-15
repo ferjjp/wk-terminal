@@ -98,9 +98,15 @@ def _mac_terminal_notifier(title: str, body: str, icon: str, click_command: list
     if clickable and click_command:
         cmd += ["-execute", " ".join(shlex.quote(p) for p in click_command)]
     try:
-        subprocess.run(cmd, capture_output=True, timeout=15)
+        # The first run blocks on macOS's "allow notifications?" dialog; killing it early records a denial.
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
     except Exception as exc:  # noqa: BLE001
         log.error("terminal-notifier failed: %s", exc)
+        return ""
+    if res.returncode != 0:
+        log.error("terminal-notifier exited with %s: %s", res.returncode, (res.stderr or res.stdout).strip())
+        if "turned off" in res.stderr:
+            log.error("enable terminal-notifier in System Settings > Notifications, then restart the daemon")
         return ""
     return "launched" if clickable and click_command else ""
 

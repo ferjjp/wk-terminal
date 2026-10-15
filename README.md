@@ -199,8 +199,10 @@ Everything should work the same with ghostty, kitty or WezTerm (all three suppor
 kitty graphics protocol). Differences, all detected automatically:
 
 - Notifications use `terminal-notifier` when installed (`brew install terminal-notifier`);
-  a click then opens the popup. Without it, plain `osascript` notifications are shown and
-  clicks do nothing.
+  a click then opens the popup. macOS asks once whether terminal-notifier may send
+  notifications: allow it (or turn it on later in System Settings > Notifications).
+  Without terminal-notifier, plain `osascript` notifications are shown; macOS attributes
+  those to Script Editor, so a click just opens Script Editor.
 - The popup opens in ghostty, kitty or WezTerm if found, otherwise in Terminal.app
   (no images there). `terminal = "..."` in the config overrides the choice.
 - `wk daemon install` writes a launchd agent in `~/Library/LaunchAgents/` instead of a

@@ -18,14 +18,16 @@ def default_terminal_command() -> str:
     if IS_MAC:
         if shutil.which("ghostty") or _mac_app_exists("Ghostty"):
             exe = shutil.which("ghostty") or "/Applications/Ghostty.app/Contents/MacOS/ghostty"
-            return f"{exe} --title=WaniKani --window-width=72 --window-height=24 -e"
+            # A second app instance: no --title (it would pin every window opened from it; the app sets its own)
+            # and quit once the popup closes so it doesn't linger as a stray Ghostty.
+            return f"{exe} --quit-after-last-window-closed=true --window-width=72 --window-height=24 -e"
         if shutil.which("kitty"):
             return "kitty --title WaniKani -o remember_window_size=no -o initial_window_width=72c -o initial_window_height=24c"
         if shutil.which("wezterm"):
             return "wezterm start --"
         return "osascript-terminal"  # handled specially: Terminal.app via AppleScript
     if shutil.which("ghostty"):
-        return "ghostty --title=WaniKani --class=wanikani-popup --window-width=72 --window-height=24 -e"
+        return "ghostty --class=wanikani-popup --window-width=72 --window-height=24 -e"
     if shutil.which("kitty"):
         return "kitty --title WaniKani -o remember_window_size=no -o initial_window_width=72c -o initial_window_height=24c"
     if shutil.which("wezterm"):
