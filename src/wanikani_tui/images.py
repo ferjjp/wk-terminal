@@ -19,13 +19,13 @@ FONT_CANDIDATES = font_candidates()
 
 
 @lru_cache(maxsize=1)
-def font_path() -> str | None:
+def font_paths() -> tuple[str, ...]:
+    """Every usable CJK font, best first; later ones only supply glyphs the earlier ones lack."""
+    paths: list[str] = []
     env = os.environ.get("WK_FONT")
     if env and Path(env).exists():
-        return env
-    for p in FONT_CANDIDATES:
-        if Path(p).exists():
-            return p
+        paths.append(env)
+    paths += [p for p in FONT_CANDIDATES if Path(p).exists()]
     import shutil
 
     if shutil.which("fc-match"):
@@ -34,21 +34,64 @@ def font_path() -> str | None:
                 ["fc-match", "-f", "%{file}", ":lang=ja"], capture_output=True, text=True, timeout=5
             ).stdout.strip()
             if out and Path(out).exists():
-                return out
+                paths.append(out)
         except Exception:
             pass
-    return None
+    return tuple(dict.fromkeys(paths))
+
+
+def font_path() -> str | None:
+    paths = font_paths()
+    return paths[0] if paths else None
 
 
 @lru_cache(maxsize=8)
-def _font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    p = font_path()
-    if p:
+def _fonts(size: int) -> tuple[ImageFont.FreeTypeFont, ...]:
+    fonts = []
+    for p in font_paths():
         try:
-            return ImageFont.truetype(p, size, index=0)  # index 0 of the CJK ttc is the JP face
+            fonts.append(ImageFont.truetype(p, size, index=0))  # index 0 of the CJK ttc is the JP face
         except OSError:
             pass
-    return ImageFont.load_default()
+    return tuple(fonts) or (ImageFont.load_default(size),)
+
+
+def _mask_bytes(font: ImageFont.FreeTypeFont, text: str) -> tuple[tuple[int, int], bytes]:
+    mask = font.getmask(text)
+    img = Image.new("L", mask.size)
+    img.im.paste(mask, (0, 0, *mask.size))
+    return mask.size, img.tobytes()
+
+
+@lru_cache(maxsize=64)
+def _notdef(font: ImageFont.FreeTypeFont) -> tuple[tuple[int, int], bytes]:
+    return _mask_bytes(font, "\u0378")  # unassigned code point -> the font's .notdef box
+
+
+@lru_cache(maxsize=4096)
+def _glyph_font(size: int, ch: str) -> ImageFont.FreeTypeFont | None:
+    """The first font in the chain that has a real glyph for ch (FreeType draws .notdef for missing ones)."""
+    for font in _fonts(size):
+        if _mask_bytes(font, ch) != _notdef(font):
+            return font
+    return None
+
+
+def has_glyphs(text: str, px: int = 160) -> bool:
+    return all(_glyph_font(px, ch) is not None for ch in text if not ch.isspace())
+
+
+def _runs(text: str, px: int) -> list[tuple[ImageFont.FreeTypeFont, str]]:
+    """Split text into (font, chunk) runs, falling back per character when the main font lacks the glyph."""
+    primary = _fonts(px)[0]
+    runs: list[tuple[ImageFont.FreeTypeFont, str]] = []
+    for ch in text:
+        font = _glyph_font(px, ch) or primary
+        if runs and runs[-1][0] is font:
+            runs[-1] = (font, runs[-1][1] + ch)
+        else:
+            runs.append((font, ch))
+    return runs
 
 
 def _hex(color: str) -> tuple[int, int, int]:
@@ -59,9 +102,16 @@ def _hex(color: str) -> tuple[int, int, int]:
 @lru_cache(maxsize=256)
 def text_image(text: str, color: str, px: int = 160, pad: int = 24) -> Image.Image:
     """The characters in white on a coloured rounded box, WaniKani style."""
-    font = _font(px)
-    probe = Image.new("RGBA", (1, 1))
-    left, top, right, bottom = ImageDraw.Draw(probe).textbbox((0, 0), text, font=font)
+    # lay the runs out on one baseline so mixed fonts line up, then centre the tight bbox
+    placed: list[tuple[ImageFont.FreeTypeFont, str, int]] = []
+    left = top = right = bottom = 0
+    cursor = 0
+    for i, (font, chunk) in enumerate(_runs(text, px)):
+        l, t, r, b = font.getbbox(chunk, anchor="ls")
+        l, r = l + cursor, r + cursor
+        left, top, right, bottom = (l, t, r, b) if i == 0 else (min(left, l), min(top, t), max(right, r), max(bottom, b))
+        placed.append((font, chunk, cursor))
+        cursor += round(font.getlength(chunk))
     w, h = right - left, bottom - top
     box_w, box_h = max(w, px) + 2 * pad, px + 2 * pad
     img = Image.new("RGBA", (box_w, box_h), (0, 0, 0, 0))
@@ -69,7 +119,8 @@ def text_image(text: str, color: str, px: int = 160, pad: int = 24) -> Image.Ima
     draw.rounded_rectangle((0, 0, box_w - 1, box_h - 1), radius=pad, fill=_hex(color))
     x = (box_w - w) // 2 - left
     y = (box_h - h) // 2 - top
-    draw.text((x, y), text, font=font, fill=(255, 255, 255, 255))
+    for font, chunk, offset in placed:
+        draw.text((x + offset, y), chunk, font=font, fill=(255, 255, 255, 255), anchor="ls")
     return img
 
 

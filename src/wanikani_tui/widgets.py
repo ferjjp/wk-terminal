@@ -133,11 +133,12 @@ class CharDisplay(Static):
             pad = " " * (len(subject.display_chars) + 4)
             self.update(Text(f"{pad}\n  {subject.display_chars}  \n{pad}", style=f"bold white on {subject.color}"))
             return
-        from .images import text_image
+        from .images import has_glyphs, text_image
 
-        if subject.characters:
+        if subject.characters and (has_glyphs(subject.characters) or not subject.image_url):
             self._img.image = text_image(subject.characters, subject.color)
         else:
+            # no characters, or a radical no installed font can draw: WaniKani's SVG
             self._img.image = text_image(subject.primary_meaning, subject.color, px=48, pad=16)
             url = subject.image_url
             if url and self.fetch:

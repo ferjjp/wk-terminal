@@ -37,12 +37,14 @@ def run() -> int:
     from textual_image.renderable.halfcell import Image as Half
     from textual_image.renderable.tgp import Image as TGP
 
-    from .images import font_path, text_image
-
+    from .images import font_paths, text_image
     from .platform import cjk_font_install_hint
 
-    fp = font_path()
+    fonts = font_paths()
+    fp = fonts[0] if fonts else None
     print(f"CJK font for images: {fp or 'NOT FOUND'}")
+    for extra in fonts[1:]:
+        print(f"   fallback for missing glyphs: {extra}")
     if not fp:
         print(f"   kanji images will fall back to a tiny bitmap font; install one with:  {cjk_font_install_hint()}")
     print("   (your terminal also needs a Japanese-capable font for kana/kanji in text; ghostty and kitty fall back automatically)")

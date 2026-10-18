@@ -65,6 +65,7 @@ def font_candidates() -> list[str]:
             "/Library/Fonts/Arial Unicode.ttf",
             "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
             "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/STHeiti Medium.ttc",
         ]
     return [
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
