@@ -192,11 +192,8 @@ in the config file; the daemon picks up changes without a restart.
 
 ## macOS
 
-**Untested so far.** The macOS paths were written without a Mac at hand; the platform
-selection is unit-tested but nothing has run on real macOS yet. Reports welcome.
-
-Everything should work the same with ghostty, kitty or WezTerm (all three support the
-kitty graphics protocol). Differences, all detected automatically:
+Works on macOS with Ghostty (kitty and WezTerm should behave the same, as all three
+support the kitty graphics protocol). Differences, all detected automatically:
 
 - Notifications use `terminal-notifier` when installed (`brew install terminal-notifier`);
   a click then opens the popup. macOS asks once whether terminal-notifier may send
