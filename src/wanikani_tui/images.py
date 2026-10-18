@@ -125,9 +125,13 @@ def text_image(text: str, color: str, px: int = 160, pad: int = 24) -> Image.Ima
 
 
 def _svg_to_png(svg: bytes, px: int) -> bytes:
+    import re
+
     import resvg_py
 
-    return resvg_py.svg_to_bytes(svg_string=svg.decode("utf-8"), height=px)
+    # resvg has no CSS variables; WaniKani strokes with var(--color-text, #000), so keep the fallback
+    text = re.sub(r"var\(--[\w-]+\s*,\s*([^)]+)\)", r"\1", svg.decode("utf-8"))
+    return resvg_py.svg_to_bytes(svg_string=text, height=px)
 
 
 def radical_image(url: str, color: str, fetch, px: int = 160, pad: int = 24) -> Image.Image:

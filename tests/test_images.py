@@ -28,3 +28,14 @@ def test_runs_pick_first_font_with_glyph(monkeypatch):
         assert len(runs) == 1 and runs[0][1] == "ab"
     finally:
         _reset()
+
+
+def test_radical_svg_css_variable_stroke(tmp_path, monkeypatch):
+    # WaniKani strokes with var(--color-text, #000); resvg ignores var() so the fallback must be substituted
+    monkeypatch.setattr(images, "image_cache_dir", lambda: tmp_path)
+    svg = (
+        b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><style>.b{fill:none;'
+        b'stroke:var(--color-text, #000);stroke-width:20px;}</style><line class="b" x1="0" y1="50" x2="100" y2="50"/></svg>'
+    )
+    img = images.radical_image("https://example.invalid/rib", "#0000ff", lambda url: svg, px=50, pad=5)
+    assert img.getpixel((30, 30)) == (255, 255, 255, 255)
